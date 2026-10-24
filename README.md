@@ -1,4 +1,4 @@
-# eDoc - Modern Doctor Appointment & Healthcare Channeling System (MERN Stack)
+# MedFlow - Modern Doctor Appointment & Healthcare Channeling System (MERN Stack)
 
 A complete modernization of the original PHP/MySQL **eDoc Doctor Appointment System** into a high-performance, full-stack **MERN** application.
 
@@ -77,7 +77,7 @@ The system includes an intelligent dual-mode database layer:
 
 ## 📁 Directory Structure
 ```
-edoc-mern/
+medflow-mern/
 ├── package.json          # Root scripts & concurrently config
 ├── server/
 │   ├── src/
