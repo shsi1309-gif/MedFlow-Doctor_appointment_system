@@ -5,7 +5,7 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(() => localStorage.getItem("edoc_token"));
+  const [token, setToken] = useState(() => localStorage.getItem("medflow_token") || localStorage.getItem("edoc_token"));
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
 
@@ -24,6 +24,7 @@ export function AuthProvider({ children }) {
           setUser(res.user);
         } catch (err) {
           console.warn("Session expired or invalid, logging out:", err.message);
+          localStorage.removeItem("medflow_token");
           localStorage.removeItem("edoc_token");
           setToken(null);
           setUser(null);
@@ -36,7 +37,8 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password, expectedRole) => {
     const res = await api.login(email, password, expectedRole);
-    localStorage.setItem("edoc_token", res.token);
+    localStorage.setItem("medflow_token", res.token);
+    localStorage.removeItem("edoc_token");
     setToken(res.token);
     setUser(res.user);
     showToast(`Welcome back, ${res.user.name}!`);
@@ -44,9 +46,9 @@ export function AuthProvider({ children }) {
   };
 
   const demoLogin = async (role) => {
-    let email = "admin@edoc.com";
-    if (role === "doctor") email = "doctor@edoc.com";
-    if (role === "patient") email = "patient@edoc.com";
+    let email = "admin@medflow.com";
+    if (role === "doctor") email = "doctor@medflow.com";
+    if (role === "patient") email = "patient@medflow.com";
 
     try {
       return await login(email, "123");
@@ -58,14 +60,16 @@ export function AuthProvider({ children }) {
 
   const register = async (data) => {
     const res = await api.register(data);
-    localStorage.setItem("edoc_token", res.token);
+    localStorage.setItem("medflow_token", res.token);
+    localStorage.removeItem("edoc_token");
     setToken(res.token);
     setUser(res.user);
-    showToast("Registration successful! Welcome to eDoc.");
+    showToast("Registration successful! Welcome to Medflow.");
     return res.user;
   };
 
   const logout = () => {
+    localStorage.removeItem("medflow_token");
     localStorage.removeItem("edoc_token");
     setToken(null);
     setUser(null);

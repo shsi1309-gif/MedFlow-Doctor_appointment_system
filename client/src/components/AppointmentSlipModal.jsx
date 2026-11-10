@@ -27,7 +27,7 @@ export default function AppointmentSlipModal({ appointment, onClose }) {
 
         <div className="modal-body printable-slip-content">
           <div className="slip-brand">
-            <span className="slip-title">eDoc Medical Channeling</span>
+            <span className="slip-title">Medflow Medical Channeling</span>
             <span className="slip-sub">Official Patient Appointment Pass</span>
           </div>
 

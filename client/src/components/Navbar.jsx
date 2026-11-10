@@ -22,7 +22,7 @@ export default function Navbar({ onOpenAuth, setActiveTab }) {
             <Activity size={22} color="#ffffff" strokeWidth={2.5} />
           </div>
           <div className="brand-text">
-            <span className="brand-title">eDoc<span className="brand-dot">.</span></span>
+            <span className="brand-title">Medflow<span className="brand-dot">.</span></span>
             <span className="brand-sub">THE E-CHANNELING PROJECT</span>
           </div>
         </div>

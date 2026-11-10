@@ -273,7 +273,7 @@ export default function AdminDashboard() {
             <div className="dashboard-header-bar">
               <div>
                 <h2>Hospital System Overview</h2>
-                <p className="sub-text">Live statistics and quick operations for eDoc</p>
+                <p className="sub-text">Live statistics and quick operations for Medflow</p>
               </div>
 
               <div className="header-actions">

@@ -339,11 +339,11 @@ export async function initDatabase() {
   const uri = process.env.MONGODB_URI;
   if (!uri && !process.env.TRY_LOCAL_MONGO) {
     console.log("ℹ️  Running in Embedded Local JSON Database mode with persistent storage.");
-    console.log("   To use MongoDB, set MONGODB_URI in server/.env (e.g. mongodb://localhost:27017/edoc or Atlas URI)");
+    console.log("   To use MongoDB, set MONGODB_URI in server/.env (e.g. mongodb://localhost:27017/medflow or Atlas URI)");
     return;
   }
 
-  const targetUri = uri || "mongodb://localhost:27017/edoc";
+  const targetUri = uri || "mongodb://localhost:27017/medflow";
   try {
     console.log(`Connecting to MongoDB at: ${targetUri}...`);
     await mongoose.connect(targetUri, {

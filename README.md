@@ -1,6 +1,6 @@
-# MedFlow - Modern Doctor Appointment & Healthcare Channeling System (MERN Stack)
+# Medflow - Modern Doctor Appointment & Healthcare Channeling System (MERN Stack)
 
-A complete modernization of the original PHP/MySQL **eDoc Doctor Appointment System** into a high-performance, full-stack **MERN** application.
+A complete modernization of the original PHP/MySQL doctor appointment system into a high-performance, full-stack **MERN** application called **Medflow**.
 
 ---
 
@@ -45,9 +45,9 @@ You can test any role instantly using the **Quick Switch** bar in the top naviga
 
 | Role | Email | Password |
 |---|---|---|
-| **Administrator** | `admin@edoc.com` | `123` |
-| **Doctor** | `doctor@edoc.com` | `123` |
-| **Patient** | `patient@edoc.com` | `123` |
+| **Administrator** | `admin@medflow.com` | `123` |
+| **Doctor** | `doctor@medflow.com` | `123` |
+| **Patient** | `patient@medflow.com` | `123` |
 | **Patient 2** | `emhashenudara@gmail.com` | `123` |
 
 ---
@@ -67,9 +67,9 @@ The system includes an intelligent dual-mode database layer:
 - **Zero-Config Embedded Mode (Default):** Runs immediately without requiring external database services. Persists data to `server/data/store.json`.
 - **MongoDB / Atlas Mode:** Open `server/.env` and set:
   ```env
-  MONGODB_URI=mongodb://localhost:27017/edoc
+  MONGODB_URI=mongodb://localhost:27017/medflow
   # or MongoDB Atlas URI:
-  # MONGODB_URI=mongodb+srv://<user>:<password>@cluster.mongodb.net/edoc
+  # MONGODB_URI=mongodb+srv://<user>:<password>@cluster.mongodb.net/medflow
   ```
   The server will automatically connect to MongoDB, setup Mongoose models, and populate initial seeds.
 

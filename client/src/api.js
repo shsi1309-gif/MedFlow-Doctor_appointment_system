@@ -1,7 +1,7 @@
 const BASE_URL = "/api";
 
 export async function fetchApi(endpoint, options = {}) {
-  const token = localStorage.getItem("edoc_token");
+  const token = localStorage.getItem("medflow_token") || localStorage.getItem("edoc_token");
   const headers = {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),

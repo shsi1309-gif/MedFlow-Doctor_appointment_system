@@ -60,7 +60,7 @@ export const initialSpecialties = [
 export const initialUsers = [
   {
     id: "admin-1",
-    email: "admin@edoc.com",
+    email: "admin@medflow.com",
     password: "123",
     role: "admin",
     name: "Administrator",
@@ -70,7 +70,7 @@ export const initialUsers = [
   },
   {
     id: "doc-1",
-    email: "doctor@edoc.com",
+    email: "doctor@medflow.com",
     password: "123",
     role: "doctor",
     name: "Dr. Test Doctor",
@@ -82,7 +82,7 @@ export const initialUsers = [
   },
   {
     id: "pat-1",
-    email: "patient@edoc.com",
+    email: "patient@medflow.com",
     password: "123",
     role: "patient",
     name: "Test Patient",
@@ -142,7 +142,7 @@ export const initialAppointments = [
     docName: "Dr. Test Doctor",
     patientId: "pat-1",
     patientName: "Test Patient",
-    patientEmail: "patient@edoc.com",
+    patientEmail: "patient@medflow.com",
     patientPhone: "0120000000",
     appointmentNumber: 1,
     appointmentDate: new Date().toISOString().split("T")[0],

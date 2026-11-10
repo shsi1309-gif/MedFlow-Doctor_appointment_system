@@ -2,7 +2,7 @@
   "users": [
     {
       "id": "admin-1",
-      "email": "admin@edoc.com",
+      "email": "admin@medflow.com",
       "password": "123",
       "role": "admin",
       "name": "Administrator",
@@ -12,7 +12,7 @@
     },
     {
       "id": "doc-1",
-      "email": "doctor@edoc.com",
+      "email": "doctor@medflow.com",
       "password": "123",
       "role": "doctor",
       "name": "Dr. Test Doctor",
@@ -24,7 +24,7 @@
     },
     {
       "id": "pat-1",
-      "email": "patient@edoc.com",
+      "email": "patient@medflow.com",
       "password": "123",
       "role": "patient",
       "name": "Test Patient",
@@ -64,7 +64,7 @@
       "id": "user-1792861624530-3vzz5",
       "createdAt": "2026-10-24T17:07:04.530Z",
       "name": "Dr. Sarah Conner",
-      "email": "sarah@edoc.com",
+      "email": "sarah@medflow.com",
       "password": "$2a$10$tegXPXVUuuLzZETwm5HfienBRA0j5AgkLbZPsk0ODBcgwu0RocYNO",
       "role": "doctor",
       "phone": "0779998888",
@@ -360,7 +360,7 @@
       "docName": "Dr. Test Doctor",
       "patientId": "pat-1",
       "patientName": "Test Patient",
-      "patientEmail": "patient@edoc.com",
+      "patientEmail": "patient@medflow.com",
       "patientPhone": "0120000000",
       "appointmentNumber": 1,
       "appointmentDate": "2026-10-24",
@@ -379,7 +379,7 @@
       "docName": "Dr. Test Doctor",
       "patientId": "pat-1",
       "patientName": "Test Patient",
-      "patientEmail": "patient@edoc.com",
+      "patientEmail": "patient@medflow.com",
       "patientPhone": "0120000000",
       "appointmentNumber": 1,
       "appointmentDate": "2026-10-24",

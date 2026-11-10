@@ -37,7 +37,7 @@ function MainContent() {
         />
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         <span style={{ fontWeight: 600, fontSize: "0.95rem" }}>
-          Initializing eDoc System...
+          Initializing Medflow System...
         </span>
       </div>
     );

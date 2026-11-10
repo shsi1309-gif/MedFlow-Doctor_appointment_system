@@ -1,7 +1,7 @@
 import jwt from "jsonwebtoken";
 import { db } from "../db.js";
 
-const JWT_SECRET = process.env.JWT_SECRET || "edoc-super-secret-jwt-key-2026";
+const JWT_SECRET = process.env.JWT_SECRET || "medflow-super-secret-jwt-key-2026";
 
 export function signToken(user) {
   return jwt.sign(

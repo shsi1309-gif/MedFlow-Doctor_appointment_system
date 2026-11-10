@@ -42,7 +42,7 @@ export default function LandingPage({ onOpenAuth }) {
 
           <p className="hero-subtitle">
             How is health today? Sounds like not good! Don't worry. Find your doctor online,
-            book consultation sessions with eDoc, and get your digital numbered appointment token instantly.
+            book consultation sessions with Medflow, and get your digital numbered appointment token instantly.
           </p>
 
           <div className="hero-actions">
@@ -113,7 +113,7 @@ export default function LandingPage({ onOpenAuth }) {
 
       {/* Footer */}
       <footer className="landing-footer">
-        <p>eDoc Doctor Appointment System • Full-Stack MERN Architecture</p>
+        <p>Medflow Doctor Appointment System • Full-Stack MERN Architecture</p>
       </footer>
     </div>
   );

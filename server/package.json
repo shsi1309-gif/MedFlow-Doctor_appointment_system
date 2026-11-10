@@ -1,7 +1,7 @@
 {
-  "name": "edoc-server",
+  "name": "medflow-server",
   "version": "1.0.0",
-  "description": "eDoc Doctor Appointment System Backend - Node.js Express & MongoDB",
+  "description": "Medflow Doctor Appointment System Backend - Node.js Express & MongoDB",
   "main": "src/index.js",
   "type": "module",
   "scripts": {

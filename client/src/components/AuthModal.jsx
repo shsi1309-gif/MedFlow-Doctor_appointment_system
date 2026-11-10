@@ -155,7 +155,7 @@ export default function AuthModal({ initialMode = "login", onClose }) {
           {view === "login-select" && (
             <div className="role-selection-wrapper">
               <p className="sub-text" style={{ marginBottom: "20px" }}>
-                Welcome to eDoc. Choose your account type to proceed to your login dashboard:
+                Welcome to Medflow. Choose your account type to proceed to your login dashboard:
               </p>
 
               <div className="role-options-list">

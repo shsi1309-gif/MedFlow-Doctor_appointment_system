@@ -30,7 +30,7 @@ app.use((req, res, next) => {
 app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",
-    system: "eDoc Doctor Appointment System API (MERN Stack)",
+    system: "Medflow Doctor Appointment System API (MERN Stack)",
     dbEngine: db.isMongo ? "MongoDB (Active)" : "Embedded Persistent Store (Active)",
     timestamp: new Date().toISOString()
   });
@@ -61,7 +61,7 @@ async function start() {
   await initDatabase();
   app.listen(PORT, () => {
     console.log(`===============================================`);
-    console.log(`🚀 eDoc MERN Backend Server running on port ${PORT}`);
+    console.log(`🚀 Medflow MERN Backend Server running on port ${PORT}`);
     console.log(`📡 URL: http://localhost:${PORT}`);
     console.log(`🗄️  Database: ${db.isMongo ? "MongoDB" : "Embedded Local Database (Auto-fallback)"}`);
     console.log(`===============================================`);

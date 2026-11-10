@@ -13,7 +13,14 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ error: "Username/Email and password are required" });
     }
 
-    const user = await db.users.findOne({ email });
+    let user = await db.users.findOne({ email });
+    if (!user && typeof email === "string") {
+      if (email.endsWith("@medflow.com")) {
+        user = await db.users.findOne({ email: email.replace(/@medflow\.com$/i, "@edoc.com") });
+      } else if (email.endsWith("@edoc.com")) {
+        user = await db.users.findOne({ email: email.replace(/@edoc\.com$/i, "@medflow.com") });
+      }
+    }
     if (!user) {
       return res.status(401).json({ error: "Login failed: Account does not exist." });
     }
