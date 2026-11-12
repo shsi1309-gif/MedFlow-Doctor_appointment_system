@@ -1,7 +1,7 @@
 -- =============================================================================
 -- Medflow Doctor Appointment System — Normalized Relational PostgreSQL Schema
--- Separate Dedicated Tables: specialties, admins, doctors (with specialty_id FK),
--- patients, schedules, appointments (6 columns)
+-- Separate Dedicated Tables: specialties, admins, doctors, patients, schedules, appointments
+-- Note: 'nic' column has been removed across all tables.
 -- =============================================================================
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS admins (
 CREATE INDEX IF NOT EXISTS idx_admins_email ON admins (LOWER(email));
 
 -- -----------------------------------------------------------------------------
--- 3. Separate Dedicated Table: Doctors (references specialties(id) via specialty_id)
+-- 3. Separate Dedicated Table: Doctors
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS doctors (
     id VARCHAR(64) PRIMARY KEY,
@@ -37,13 +37,13 @@ CREATE TABLE IF NOT EXISTS doctors (
     password VARCHAR(255) NOT NULL,
     name VARCHAR(255) NOT NULL,
     phone VARCHAR(64) DEFAULT '',
-    nic VARCHAR(64) DEFAULT '',
     specialty_id INT REFERENCES specialties(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Migration helpers if table already exists
+-- Drop nic and legacy columns from doctors
 ALTER TABLE doctors ADD COLUMN IF NOT EXISTS specialty_id INT REFERENCES specialties(id) ON DELETE SET NULL;
+ALTER TABLE doctors DROP COLUMN IF EXISTS nic CASCADE;
 ALTER TABLE doctors DROP COLUMN IF EXISTS specialty CASCADE;
 ALTER TABLE doctors DROP COLUMN IF EXISTS specialty_name CASCADE;
 
@@ -59,11 +59,13 @@ CREATE TABLE IF NOT EXISTS patients (
     password VARCHAR(255) NOT NULL,
     name VARCHAR(255) NOT NULL,
     phone VARCHAR(64) DEFAULT '',
-    nic VARCHAR(64) DEFAULT '',
     dob VARCHAR(64) DEFAULT '',
     address TEXT DEFAULT '',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Drop nic from patients
+ALTER TABLE patients DROP COLUMN IF EXISTS nic CASCADE;
 
 CREATE INDEX IF NOT EXISTS idx_patients_email ON patients (LOWER(email));
 
@@ -110,10 +112,10 @@ CREATE INDEX IF NOT EXISTS idx_appointments_patient ON appointments (patient_id)
 DROP VIEW IF EXISTS users CASCADE;
 
 CREATE OR REPLACE VIEW users AS
-  SELECT id, email, password, 'admin' AS role, name, phone, '' AS nic, '' AS dob, '' AS address, NULL::INT AS specialty_id, '' AS specialty_name, '' AS specialty, created_at FROM admins
+  SELECT id, email, password, 'admin' AS role, name, phone, '' AS dob, '' AS address, NULL::INT AS specialty_id, '' AS specialty_name, '' AS specialty, created_at FROM admins
   UNION ALL
-  SELECT d.id, d.email, d.password, 'doctor' AS role, d.name, d.phone, d.nic, '' AS dob, '' AS address, d.specialty_id, COALESCE(s.sname, '') AS specialty_name, COALESCE(s.sname, '') AS specialty, d.created_at 
+  SELECT d.id, d.email, d.password, 'doctor' AS role, d.name, d.phone, '' AS dob, '' AS address, d.specialty_id, COALESCE(s.sname, '') AS specialty_name, COALESCE(s.sname, '') AS specialty, d.created_at 
   FROM doctors d 
   LEFT JOIN specialties s ON d.specialty_id = s.id
   UNION ALL
-  SELECT id, email, password, 'patient' AS role, name, phone, nic, dob, address, NULL::INT AS specialty_id, '' AS specialty_name, '' AS specialty, created_at FROM patients;
+  SELECT id, email, password, 'patient' AS role, name, phone, dob, address, NULL::INT AS specialty_id, '' AS specialty_name, '' AS specialty, created_at FROM patients;

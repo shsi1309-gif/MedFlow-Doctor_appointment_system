@@ -73,7 +73,6 @@ function mapUser(row) {
     role: row.role,
     name: row.name,
     phone: row.phone || "",
-    nic: row.nic || "",
     dob: row.dob || "",
     address: row.address || "",
     specialtyId: specId,
@@ -199,7 +198,7 @@ export const db = {
     find: async (filter = {}) => {
       if (db.isPostgres) {
         let query = `
-          SELECT d.id, d.email, d.password, d.name, d.phone, d.nic, d.specialty_id, s.sname AS specialty_name, 'doctor' AS role, d.created_at
+          SELECT d.id, d.email, d.password, d.name, d.phone, d.specialty_id, s.sname AS specialty_name, 'doctor' AS role, d.created_at
           FROM doctors d
           LEFT JOIN specialties s ON d.specialty_id = s.id
         `;
@@ -220,7 +219,7 @@ export const db = {
     findById: async (id) => {
       if (db.isPostgres) {
         const query = `
-          SELECT d.id, d.email, d.password, d.name, d.phone, d.nic, d.specialty_id, s.sname AS specialty_name, 'doctor' AS role, d.created_at
+          SELECT d.id, d.email, d.password, d.name, d.phone, d.specialty_id, s.sname AS specialty_name, 'doctor' AS role, d.created_at
           FROM doctors d
           LEFT JOIN specialties s ON d.specialty_id = s.id
           WHERE d.id = $1
@@ -236,14 +235,14 @@ export const db = {
   patients: {
     find: async () => {
       if (db.isPostgres) {
-        const res = await pgPool.query("SELECT id, email, password, name, phone, nic, dob, address, 'patient' AS role, created_at FROM patients ORDER BY created_at DESC");
+        const res = await pgPool.query("SELECT id, email, password, name, phone, dob, address, 'patient' AS role, created_at FROM patients ORDER BY created_at DESC");
         return res.rows.map(mapUser);
       }
       return localStore.data.users.filter(u => u.role === "patient");
     },
     findById: async (id) => {
       if (db.isPostgres) {
-        const res = await pgPool.query("SELECT id, email, password, name, phone, nic, dob, address, 'patient' AS role, created_at FROM patients WHERE id = $1", [id]);
+        const res = await pgPool.query("SELECT id, email, password, name, phone, dob, address, 'patient' AS role, created_at FROM patients WHERE id = $1", [id]);
         return res.rows[0] ? mapUser(res.rows[0]) : null;
       }
       return localStore.data.users.find(u => u.role === "patient" && (u.id === id || u._id === id)) || null;
@@ -334,14 +333,13 @@ export const db = {
         } else if (role === "doctor") {
           const specId = data.specialtyId ? Number(data.specialtyId) : 1;
           const res = await pgPool.query(
-            "INSERT INTO doctors (id, email, password, name, phone, nic, specialty_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, email, password, name, phone, nic, specialty_id, 'doctor' AS role, created_at",
+            "INSERT INTO doctors (id, email, password, name, phone, specialty_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, email, password, name, phone, specialty_id, 'doctor' AS role, created_at",
             [
               id,
               data.email.toLowerCase(),
               data.password,
               data.name,
               data.phone || "",
-              data.nic || "",
               specId
             ]
           );
@@ -349,14 +347,13 @@ export const db = {
         } else {
           // Patient
           const res = await pgPool.query(
-            "INSERT INTO patients (id, email, password, name, phone, nic, dob, address) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, email, password, name, phone, nic, dob, address, 'patient' AS role, created_at",
+            "INSERT INTO patients (id, email, password, name, phone, dob, address) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, email, password, name, phone, dob, address, 'patient' AS role, created_at",
             [
               id,
               data.email.toLowerCase(),
               data.password,
               data.name,
               data.phone || "",
-              data.nic || "",
               data.dob || "",
               data.address || ""
             ]
@@ -400,20 +397,12 @@ export const db = {
           values.push(updates.phone);
         }
         if (role === "doctor") {
-          if (updates.nic !== undefined) {
-            fields.push(`nic = $${idx++}`);
-            values.push(updates.nic);
-          }
           if (updates.specialtyId !== undefined) {
             fields.push(`specialty_id = $${idx++}`);
             values.push(Number(updates.specialtyId));
           }
         }
         if (role === "patient") {
-          if (updates.nic !== undefined) {
-            fields.push(`nic = $${idx++}`);
-            values.push(updates.nic);
-          }
           if (updates.dob !== undefined) {
             fields.push(`dob = $${idx++}`);
             values.push(updates.dob);

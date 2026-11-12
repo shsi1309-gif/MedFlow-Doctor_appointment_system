@@ -54,7 +54,7 @@ router.get("/:id", async (req, res) => {
 // POST /api/doctors (Admin only)
 router.post("/", authenticate, authorize("admin"), async (req, res) => {
   try {
-    const { name, email, password, nic, phone, specialtyId } = req.body;
+    const { name, email, password, phone, specialtyId } = req.body;
     if (!name || !email || !password || !specialtyId) {
       return res.status(400).json({ error: "Name, email, password, and specialty are required" });
     }
@@ -73,7 +73,6 @@ router.post("/", authenticate, authorize("admin"), async (req, res) => {
       name,
       email: email.toLowerCase(),
       password: hashedPassword,
-      nic: nic || "",
       phone: phone || "",
       specialtyId: Number(specialtyId),
       specialtyName

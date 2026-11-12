@@ -263,7 +263,6 @@ erDiagram
         string password
         string name
         string phone
-        string nic
         int specialtyId FK "References specialties(id)"
         date createdAt
     }
@@ -274,7 +273,6 @@ erDiagram
         string password
         string name
         string phone
-        string nic
         string dob
         string address
         date createdAt

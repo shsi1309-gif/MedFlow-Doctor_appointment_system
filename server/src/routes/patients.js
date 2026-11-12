@@ -18,7 +18,6 @@ router.get("/", authenticate, async (req, res) => {
         p =>
           p.name?.toLowerCase().includes(term) ||
           p.email?.toLowerCase().includes(term) ||
-          p.nic?.toLowerCase().includes(term) ||
           p.phone?.toLowerCase().includes(term)
       );
     }

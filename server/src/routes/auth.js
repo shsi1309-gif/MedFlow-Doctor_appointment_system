@@ -62,7 +62,6 @@ router.post("/register", async (req, res) => {
       password,
       role = "patient",
       phone,
-      nic,
       dob,
       address,
       specialtyId
@@ -90,7 +89,6 @@ router.post("/register", async (req, res) => {
       password: hashedPassword,
       role: role || "patient",
       phone: phone || "",
-      nic: nic || "",
       dob: dob || "",
       address: address || "",
       specialtyId: specialtyId ? Number(specialtyId) : undefined,
