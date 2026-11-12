@@ -237,46 +237,58 @@ One of the standout design characteristics of the Medflow server is its **Dual-M
 
 ```mermaid
 erDiagram
-    USER ||--o{ SCHEDULE : "creates/hosts (doctor)"
-    USER ||--o{ APPOINTMENT : "books (patient)"
+    DOCTOR ||--o{ SCHEDULE : "creates/hosts"
+    DOCTOR ||--o{ APPOINTMENT : "attends"
+    PATIENT ||--o{ APPOINTMENT : "books"
     SCHEDULE ||--o{ APPOINTMENT : "contains slots"
-    SPECIALTY ||--o{ USER : "classifies"
 
-    USER {
-        string _id PK
+    ADMIN {
+        string id PK
         string email UK
-        string password "Bcrypt hash"
-        string role "admin | doctor | patient"
+        string password
+        string name
+        string phone
+        date createdAt
+    }
+
+    DOCTOR {
+        string id PK
+        string email UK
+        string password
+        string name
+        string phone
+        string nic
+        string specialty "Embedded directly in doctor table"
+        date createdAt
+    }
+
+    PATIENT {
+        string id PK
+        string email UK
+        string password
         string name
         string phone
         string nic
         string dob
         string address
-        int specialtyId FK
-        string specialtyName
         date createdAt
     }
 
-    SPECIALTY {
-        int id PK
-        string sname
-    }
-
     SCHEDULE {
-        string _id PK
+        string id PK
         string docId FK
         string docName
         string specialtyName
         string title
-        string sessionDate "YYYY-MM-DD"
-        string sessionTime "HH:mm"
+        string sessionDate
+        string sessionTime
         int maxAppointments
         int bookedCount
         date createdAt
     }
 
     APPOINTMENT {
-        string _id PK
+        string id PK
         string scheduleId FK
         string scheduleTitle
         string docId FK
@@ -285,11 +297,11 @@ erDiagram
         string patientName
         string patientEmail
         string patientPhone
-        int appointmentNumber "Sequential Token #"
-        string appointmentDate "YYYY-MM-DD"
-        string sessionDate "YYYY-MM-DD"
-        string sessionTime "HH:mm"
-        string status "confirmed | cancelled | completed"
+        int appointmentNumber "Sequential Token Number"
+        string appointmentDate
+        string sessionDate
+        string sessionTime
+        string status
         date createdAt
     }
 ```

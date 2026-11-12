@@ -1,20 +1,12 @@
 -- =============================================================================
 -- Medflow Doctor Appointment System — Normalized Relational PostgreSQL Schema
--- Separate Dedicated Tables: admins, doctors, patients, schedules, appointments
+-- Separate Dedicated Tables: admins, doctors (with specialty column), patients, schedules, appointments
 -- =============================================================================
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- -----------------------------------------------------------------------------
--- 1. Specialties Catalog
--- -----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS specialties (
-    id INT PRIMARY KEY,
-    sname VARCHAR(255) NOT NULL UNIQUE
-);
-
--- -----------------------------------------------------------------------------
--- 2. Separate Dedicated Table: Admins
+-- 1. Separate Dedicated Table: Admins
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS admins (
     id VARCHAR(64) PRIMARY KEY,
@@ -28,7 +20,7 @@ CREATE TABLE IF NOT EXISTS admins (
 CREATE INDEX IF NOT EXISTS idx_admins_email ON admins (LOWER(email));
 
 -- -----------------------------------------------------------------------------
--- 3. Separate Dedicated Table: Doctors
+-- 2. Separate Dedicated Table: Doctors (with embedded specialty column)
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS doctors (
     id VARCHAR(64) PRIMARY KEY,
@@ -37,16 +29,31 @@ CREATE TABLE IF NOT EXISTS doctors (
     name VARCHAR(255) NOT NULL,
     phone VARCHAR(64) DEFAULT '',
     nic VARCHAR(64) DEFAULT '',
-    specialty_id INT REFERENCES specialties(id) ON DELETE SET NULL,
-    specialty_name VARCHAR(255),
+    specialty VARCHAR(255) NOT NULL DEFAULT 'General Practice',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Ensure specialty column exists if doctors table was created previously
+ALTER TABLE doctors ADD COLUMN IF NOT EXISTS specialty VARCHAR(255) DEFAULT 'General Practice';
+
+-- Drop legacy specialty_id foreign key constraint and specialties table
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.table_constraints 
+    WHERE constraint_name = 'doctors_specialty_id_fkey'
+  ) THEN
+    ALTER TABLE doctors DROP CONSTRAINT doctors_specialty_id_fkey;
+  END IF;
+END $$;
+
+DROP TABLE IF EXISTS specialties CASCADE;
+
 CREATE INDEX IF NOT EXISTS idx_doctors_email ON doctors (LOWER(email));
-CREATE INDEX IF NOT EXISTS idx_doctors_specialty ON doctors (specialty_id);
+CREATE INDEX IF NOT EXISTS idx_doctors_specialty ON doctors (specialty);
 
 -- -----------------------------------------------------------------------------
--- 4. Separate Dedicated Table: Patients
+-- 3. Separate Dedicated Table: Patients
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS patients (
     id VARCHAR(64) PRIMARY KEY,
@@ -63,33 +70,7 @@ CREATE TABLE IF NOT EXISTS patients (
 CREATE INDEX IF NOT EXISTS idx_patients_email ON patients (LOWER(email));
 
 -- -----------------------------------------------------------------------------
--- Safe Migration: Only drop 'users' if it is a real table (relkind = 'r')
--- -----------------------------------------------------------------------------
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM pg_class c
-    JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname = 'public' AND c.relname = 'users' AND c.relkind = 'r'
-  ) THEN
-    EXECUTE 'INSERT INTO admins (id, email, password, name, phone, created_at)
-             SELECT id, email, password, name, phone, created_at FROM public.users WHERE role = ''admin''
-             ON CONFLICT (email) DO NOTHING';
-
-    EXECUTE 'INSERT INTO doctors (id, email, password, name, phone, nic, specialty_id, specialty_name, created_at)
-             SELECT id, email, password, name, phone, nic, specialty_id, specialty_name, created_at FROM public.users WHERE role = ''doctor''
-             ON CONFLICT (email) DO NOTHING';
-
-    EXECUTE 'INSERT INTO patients (id, email, password, name, phone, nic, dob, address, created_at)
-             SELECT id, email, password, name, phone, nic, dob, address, created_at FROM public.users WHERE role = ''patient''
-             ON CONFLICT (email) DO NOTHING';
-
-    EXECUTE 'DROP TABLE public.users CASCADE';
-  END IF;
-END $$;
-
--- -----------------------------------------------------------------------------
--- 5. Schedules (Clinical Sessions) — References doctors(id)
+-- 4. Schedules (Clinical Sessions) — References doctors(id)
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS schedules (
     id VARCHAR(64) PRIMARY KEY,
@@ -109,7 +90,7 @@ CREATE INDEX IF NOT EXISTS idx_schedules_doc ON schedules (doc_id);
 CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules (session_date);
 
 -- -----------------------------------------------------------------------------
--- 6. Appointments — References doctors(id) and patients(id)
+-- 5. Appointments — References doctors(id) and patients(id)
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS appointments (
     id VARCHAR(64) PRIMARY KEY,
@@ -135,11 +116,13 @@ CREATE INDEX IF NOT EXISTS idx_appointments_patient ON appointments (patient_id)
 CREATE INDEX IF NOT EXISTS idx_appointments_doc ON appointments (doc_id);
 
 -- -----------------------------------------------------------------------------
--- 7. Unified Auth View: Combines admins, doctors, and patients for authentication
+-- 6. Unified Auth View: Combines admins, doctors, and patients
 -- -----------------------------------------------------------------------------
+DROP VIEW IF EXISTS users CASCADE;
+
 CREATE OR REPLACE VIEW users AS
-  SELECT id, email, password, 'admin' AS role, name, phone, '' AS nic, '' AS dob, '' AS address, NULL::INT AS specialty_id, '' AS specialty_name, created_at FROM admins
+  SELECT id, email, password, 'admin' AS role, name, phone, '' AS nic, '' AS dob, '' AS address, NULL::INT AS specialty_id, '' AS specialty_name, '' AS specialty, created_at FROM admins
   UNION ALL
-  SELECT id, email, password, 'doctor' AS role, name, phone, nic, '' AS dob, '' AS address, specialty_id, specialty_name, created_at FROM doctors
+  SELECT id, email, password, 'doctor' AS role, name, phone, nic, '' AS dob, '' AS address, NULL::INT AS specialty_id, specialty AS specialty_name, specialty, created_at FROM doctors
   UNION ALL
-  SELECT id, email, password, 'patient' AS role, name, phone, nic, dob, address, NULL::INT AS specialty_id, '' AS specialty_name, created_at FROM patients;
+  SELECT id, email, password, 'patient' AS role, name, phone, nic, dob, address, NULL::INT AS specialty_id, '' AS specialty_name, '' AS specialty, created_at FROM patients;
