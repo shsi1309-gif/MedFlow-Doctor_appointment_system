@@ -11,7 +11,7 @@ A complete modernization of the original PHP/MySQL doctor appointment system int
 | **Frontend** | React 19 + Vite | Component-driven, responsive UI with Lucide icons |
 | **Styling** | Vanilla CSS Design System | Modern palette, glassmorphism, micro-animations, print passes |
 | **Backend** | Node.js + Express.js | Modular RESTful API with JWT auth and RBAC |
-| **Database** | MongoDB / Mongoose | Dual-mode: Full MongoDB/Mongoose support + embedded persistent JSON engine |
+| **Database** | PostgreSQL / Supabase | Dual-mode: Full PostgreSQL support (with ACID row-level locking & constraints) + embedded JSON engine |
 
 ---
 
@@ -65,13 +65,11 @@ This runs both the Express backend and React Vite client concurrently:
 ### 2. Database Modes
 The system includes an intelligent dual-mode database layer:
 - **Zero-Config Embedded Mode (Default):** Runs immediately without requiring external database services. Persists data to `server/data/store.json`.
-- **MongoDB / Atlas Mode:** Open `server/.env` and set:
+- **PostgreSQL / Supabase Mode:** Open `server/.env` and set:
   ```env
-  MONGODB_URI=mongodb://localhost:27017/medflow
-  # or MongoDB Atlas URI:
-  # MONGODB_URI=mongodb+srv://<user>:<password>@cluster.mongodb.net/medflow
+  DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres
   ```
-  The server will automatically connect to MongoDB, setup Mongoose models, and populate initial seeds.
+  The server will automatically connect to PostgreSQL/Supabase, verify schema tables with constraints, and populate initial seeds. Includes atomic booking transactions with `SELECT ... FOR UPDATE` row-level locking to prevent race conditions.
 
 ---
 

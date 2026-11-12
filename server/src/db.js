@@ -1,4 +1,3 @@
-import mongoose from "mongoose";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -17,62 +16,6 @@ const STORE_FILE = path.join(DATA_DIR, "store.json");
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
-
-// ----------------------------------------------------
-// Mongoose Schemas (Used when MongoDB is connected)
-// ----------------------------------------------------
-const userSchema = new mongoose.Schema({
-  email: { type: String, required: true, unique: true, lowercase: true },
-  password: { type: String, required: true },
-  role: { type: String, enum: ["admin", "doctor", "patient"], required: true },
-  name: { type: String, required: true },
-  phone: String,
-  nic: String,
-  dob: String,
-  address: String,
-  specialtyId: Number,
-  specialtyName: String,
-  createdAt: { type: Date, default: Date.now }
-});
-
-const specialtySchema = new mongoose.Schema({
-  id: { type: Number, required: true, unique: true },
-  sname: { type: String, required: true }
-});
-
-const scheduleSchema = new mongoose.Schema({
-  docId: { type: String, required: true },
-  docName: String,
-  specialtyName: String,
-  title: { type: String, required: true },
-  sessionDate: { type: String, required: true },
-  sessionTime: { type: String, required: true },
-  maxAppointments: { type: Number, default: 20 },
-  bookedCount: { type: Number, default: 0 },
-  createdAt: { type: Date, default: Date.now }
-});
-
-const appointmentSchema = new mongoose.Schema({
-  scheduleId: { type: String, required: true },
-  scheduleTitle: String,
-  docId: { type: String, required: true },
-  docName: String,
-  patientId: { type: String, required: true },
-  patientName: String,
-  patientEmail: String,
-  patientPhone: String,
-  appointmentNumber: { type: Number, required: true },
-  appointmentDate: String,
-  sessionDate: String,
-  sessionTime: String,
-  status: { type: String, enum: ["confirmed", "cancelled", "completed"], default: "confirmed" },
-  createdAt: { type: Date, default: Date.now }
-});
-
-export let UserModel;
-export let SpecialtyModel;
-export let ScheduleModel;
-export let AppointmentModel;
 
 // ----------------------------------------------------
 // Memory / File-based Store Fallback Implementation
@@ -113,16 +56,97 @@ class LocalStore {
 
 const localStore = new LocalStore();
 
-// Wrapper with unified async query methods
+// ----------------------------------------------------
+// PostgreSQL Helpers & Column Name Mappings
+// ----------------------------------------------------
+let pgPool = null;
+
+function mapUser(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    _id: row.id,
+    email: row.email,
+    password: row.password,
+    role: row.role,
+    name: row.name,
+    phone: row.phone || "",
+    nic: row.nic || "",
+    dob: row.dob || "",
+    address: row.address || "",
+    specialtyId: row.specialty_id ? Number(row.specialty_id) : undefined,
+    specialtyName: row.specialty_name || "",
+    createdAt: row.created_at
+  };
+}
+
+function mapSchedule(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    _id: row.id,
+    docId: row.doc_id,
+    docName: row.doc_name,
+    specialtyName: row.specialty_name,
+    title: row.title,
+    sessionDate: row.session_date,
+    sessionTime: row.session_time,
+    maxAppointments: Number(row.max_appointments),
+    bookedCount: Number(row.booked_count || 0),
+    createdAt: row.created_at
+  };
+}
+
+function mapAppointment(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    _id: row.id,
+    scheduleId: row.schedule_id,
+    scheduleTitle: row.schedule_title,
+    docId: row.doc_id,
+    docName: row.doc_name,
+    patientId: row.patient_id,
+    patientName: row.patient_name,
+    patientEmail: row.patient_email,
+    patientPhone: row.patient_phone || "",
+    appointmentNumber: Number(row.appointment_number),
+    appointmentDate: row.appointment_date,
+    sessionDate: row.session_date,
+    sessionTime: row.session_time,
+    status: row.status,
+    createdAt: row.created_at
+  };
+}
+
+// ----------------------------------------------------
+// Unified Database Interface
+// ----------------------------------------------------
 export const db = {
+  isPostgres: false,
   isMongo: false,
 
   users: {
     find: async (filter = {}) => {
-      if (db.isMongo) {
-        const docs = await UserModel.find(filter).lean();
-        return docs.map(d => ({ ...d, id: d._id.toString() }));
+      if (db.isPostgres) {
+        const conditions = [];
+        const values = [];
+        let idx = 1;
+
+        if (filter.role) {
+          conditions.push(`role = $${idx++}`);
+          values.push(filter.role);
+        }
+        if (filter.email) {
+          conditions.push(`LOWER(email) = LOWER($${idx++})`);
+          values.push(filter.email);
+        }
+
+        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+        const res = await pgPool.query(`SELECT * FROM users ${whereClause} ORDER BY created_at DESC`, values);
+        return res.rows.map(mapUser);
       }
+
       return localStore.data.users.filter(u => {
         for (const [k, v] of Object.entries(filter)) {
           if (u[k] !== v) return false;
@@ -130,18 +154,35 @@ export const db = {
         return true;
       });
     },
+
     findById: async (id) => {
-      if (db.isMongo) {
-        const doc = await UserModel.findById(id).lean();
-        return doc ? { ...doc, id: doc._id.toString() } : null;
+      if (db.isPostgres) {
+        const res = await pgPool.query("SELECT * FROM users WHERE id = $1 LIMIT 1", [id]);
+        return res.rows[0] ? mapUser(res.rows[0]) : null;
       }
       return localStore.data.users.find(u => u.id === id || u._id === id) || null;
     },
+
     findOne: async (filter = {}) => {
-      if (db.isMongo) {
-        const doc = await UserModel.findOne(filter).lean();
-        return doc ? { ...doc, id: doc._id.toString() } : null;
+      if (db.isPostgres) {
+        const conditions = [];
+        const values = [];
+        let idx = 1;
+
+        if (filter.email) {
+          conditions.push(`LOWER(email) = LOWER($${idx++})`);
+          values.push(filter.email);
+        }
+        if (filter.role) {
+          conditions.push(`role = $${idx++}`);
+          values.push(filter.role);
+        }
+
+        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+        const res = await pgPool.query(`SELECT * FROM users ${whereClause} LIMIT 1`, values);
+        return res.rows[0] ? mapUser(res.rows[0]) : null;
       }
+
       return localStore.data.users.find(u => {
         for (const [k, v] of Object.entries(filter)) {
           if (typeof v === "string") {
@@ -153,14 +194,34 @@ export const db = {
         return true;
       }) || null;
     },
+
     create: async (data) => {
-      if (db.isMongo) {
-        const created = await UserModel.create(data);
-        const obj = created.toObject();
-        return { ...obj, id: obj._id.toString() };
+      const id = data.id || "user-" + Date.now() + "-" + Math.random().toString(36).substr(2, 5);
+      if (db.isPostgres) {
+        const query = `
+          INSERT INTO users (id, email, password, role, name, phone, nic, dob, address, specialty_id, specialty_name)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          RETURNING *
+        `;
+        const values = [
+          id,
+          data.email.toLowerCase(),
+          data.password,
+          data.role || "patient",
+          data.name,
+          data.phone || "",
+          data.nic || "",
+          data.dob || "",
+          data.address || "",
+          data.specialtyId || null,
+          data.specialtyName || ""
+        ];
+        const res = await pgPool.query(query, values);
+        return mapUser(res.rows[0]);
       }
+
       const newItem = {
-        id: "user-" + Date.now() + "-" + Math.random().toString(36).substr(2, 5),
+        id,
         createdAt: new Date().toISOString(),
         ...data
       };
@@ -168,21 +229,50 @@ export const db = {
       localStore.save();
       return newItem;
     },
+
     findByIdAndUpdate: async (id, updates) => {
-      if (db.isMongo) {
-        const updated = await UserModel.findByIdAndUpdate(id, updates, { new: true }).lean();
-        return updated ? { ...updated, id: updated._id.toString() } : null;
+      if (db.isPostgres) {
+        const fields = [];
+        const values = [];
+        let idx = 1;
+
+        const fieldMapping = {
+          name: "name",
+          password: "password",
+          phone: "phone",
+          nic: "nic",
+          dob: "dob",
+          address: "address",
+          specialtyId: "specialty_id",
+          specialtyName: "specialty_name"
+        };
+
+        for (const [key, col] of Object.entries(fieldMapping)) {
+          if (updates[key] !== undefined) {
+            fields.push(`${col} = $${idx++}`);
+            values.push(updates[key]);
+          }
+        }
+
+        if (fields.length === 0) return await db.users.findById(id);
+
+        values.push(id);
+        const query = `UPDATE users SET ${fields.join(", ")} WHERE id = $${idx} RETURNING *`;
+        const res = await pgPool.query(query, values);
+        return res.rows[0] ? mapUser(res.rows[0]) : null;
       }
+
       const idx = localStore.data.users.findIndex(u => u.id === id || u._id === id);
       if (idx === -1) return null;
       localStore.data.users[idx] = { ...localStore.data.users[idx], ...updates };
       localStore.save();
       return localStore.data.users[idx];
     },
+
     findByIdAndDelete: async (id) => {
-      if (db.isMongo) {
-        const deleted = await UserModel.findByIdAndDelete(id).lean();
-        return deleted ? { ...deleted, id: deleted._id.toString() } : null;
+      if (db.isPostgres) {
+        const res = await pgPool.query("DELETE FROM users WHERE id = $1 RETURNING *", [id]);
+        return res.rows[0] ? mapUser(res.rows[0]) : null;
       }
       const idx = localStore.data.users.findIndex(u => u.id === id || u._id === id);
       if (idx === -1) return null;
@@ -194,16 +284,17 @@ export const db = {
 
   specialties: {
     find: async () => {
-      if (db.isMongo) {
-        const docs = await SpecialtyModel.find().sort({ sname: 1 }).lean();
-        return docs.map(d => ({ ...d, id: d.id || d._id.toString() }));
+      if (db.isPostgres) {
+        const res = await pgPool.query("SELECT * FROM specialties ORDER BY sname ASC");
+        return res.rows.map(r => ({ id: r.id, sname: r.sname }));
       }
       return [...localStore.data.specialties].sort((a, b) => a.sname.localeCompare(b.sname));
     },
+
     findById: async (id) => {
-      if (db.isMongo) {
-        const doc = await SpecialtyModel.findOne({ id: Number(id) }).lean();
-        return doc || null;
+      if (db.isPostgres) {
+        const res = await pgPool.query("SELECT * FROM specialties WHERE id = $1 LIMIT 1", [Number(id)]);
+        return res.rows[0] ? { id: res.rows[0].id, sname: res.rows[0].sname } : null;
       }
       return localStore.data.specialties.find(s => s.id === Number(id)) || null;
     }
@@ -211,10 +302,28 @@ export const db = {
 
   schedules: {
     find: async (filter = {}) => {
-      if (db.isMongo) {
-        const docs = await ScheduleModel.find(filter).sort({ sessionDate: 1, sessionTime: 1 }).lean();
-        return docs.map(d => ({ ...d, id: d._id.toString() }));
+      if (db.isPostgres) {
+        const conditions = [];
+        const values = [];
+        let idx = 1;
+
+        if (filter.docId) {
+          conditions.push(`doc_id = $${idx++}`);
+          values.push(filter.docId);
+        }
+        if (filter.sessionDate) {
+          conditions.push(`session_date = $${idx++}`);
+          values.push(filter.sessionDate);
+        }
+
+        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+        const res = await pgPool.query(
+          `SELECT * FROM schedules ${whereClause} ORDER BY session_date ASC, session_time ASC`,
+          values
+        );
+        return res.rows.map(mapSchedule);
       }
+
       let results = localStore.data.schedules.filter(s => {
         for (const [k, v] of Object.entries(filter)) {
           if (s[k] !== v) return false;
@@ -223,21 +332,39 @@ export const db = {
       });
       return results.sort((a, b) => (a.sessionDate + a.sessionTime).localeCompare(b.sessionDate + b.sessionTime));
     },
+
     findById: async (id) => {
-      if (db.isMongo) {
-        const doc = await ScheduleModel.findById(id).lean();
-        return doc ? { ...doc, id: doc._id.toString() } : null;
+      if (db.isPostgres) {
+        const res = await pgPool.query("SELECT * FROM schedules WHERE id = $1 LIMIT 1", [id]);
+        return res.rows[0] ? mapSchedule(res.rows[0]) : null;
       }
       return localStore.data.schedules.find(s => s.id === id || s._id === id) || null;
     },
+
     create: async (data) => {
-      if (db.isMongo) {
-        const created = await ScheduleModel.create(data);
-        const obj = created.toObject();
-        return { ...obj, id: obj._id.toString() };
+      const id = data.id || "sched-" + Date.now() + "-" + Math.random().toString(36).substr(2, 5);
+      if (db.isPostgres) {
+        const query = `
+          INSERT INTO schedules (id, doc_id, doc_name, specialty_name, title, session_date, session_time, max_appointments, booked_count)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0)
+          RETURNING *
+        `;
+        const values = [
+          id,
+          data.docId,
+          data.docName || "",
+          data.specialtyName || "",
+          data.title,
+          data.sessionDate,
+          data.sessionTime,
+          data.maxAppointments || 20
+        ];
+        const res = await pgPool.query(query, values);
+        return mapSchedule(res.rows[0]);
       }
+
       const newItem = {
-        id: "sched-" + Date.now() + "-" + Math.random().toString(36).substr(2, 5),
+        id,
         bookedCount: 0,
         createdAt: new Date().toISOString(),
         ...data
@@ -246,21 +373,53 @@ export const db = {
       localStore.save();
       return newItem;
     },
+
     findByIdAndUpdate: async (id, updates) => {
-      if (db.isMongo) {
-        const updated = await ScheduleModel.findByIdAndUpdate(id, updates, { new: true }).lean();
-        return updated ? { ...updated, id: updated._id.toString() } : null;
+      if (db.isPostgres) {
+        const fields = [];
+        const values = [];
+        let idx = 1;
+
+        if (updates.bookedCount !== undefined) {
+          fields.push(`booked_count = $${idx++}`);
+          values.push(updates.bookedCount);
+        }
+        if (updates.title !== undefined) {
+          fields.push(`title = $${idx++}`);
+          values.push(updates.title);
+        }
+        if (updates.sessionDate !== undefined) {
+          fields.push(`session_date = $${idx++}`);
+          values.push(updates.sessionDate);
+        }
+        if (updates.sessionTime !== undefined) {
+          fields.push(`session_time = $${idx++}`);
+          values.push(updates.sessionTime);
+        }
+        if (updates.maxAppointments !== undefined) {
+          fields.push(`max_appointments = $${idx++}`);
+          values.push(updates.maxAppointments);
+        }
+
+        if (fields.length === 0) return await db.schedules.findById(id);
+
+        values.push(id);
+        const query = `UPDATE schedules SET ${fields.join(", ")} WHERE id = $${idx} RETURNING *`;
+        const res = await pgPool.query(query, values);
+        return res.rows[0] ? mapSchedule(res.rows[0]) : null;
       }
+
       const idx = localStore.data.schedules.findIndex(s => s.id === id || s._id === id);
       if (idx === -1) return null;
       localStore.data.schedules[idx] = { ...localStore.data.schedules[idx], ...updates };
       localStore.save();
       return localStore.data.schedules[idx];
     },
+
     findByIdAndDelete: async (id) => {
-      if (db.isMongo) {
-        const deleted = await ScheduleModel.findByIdAndDelete(id).lean();
-        return deleted ? { ...deleted, id: deleted._id.toString() } : null;
+      if (db.isPostgres) {
+        const res = await pgPool.query("DELETE FROM schedules WHERE id = $1 RETURNING *", [id]);
+        return res.rows[0] ? mapSchedule(res.rows[0]) : null;
       }
       const idx = localStore.data.schedules.findIndex(s => s.id === id || s._id === id);
       if (idx === -1) return null;
@@ -272,10 +431,36 @@ export const db = {
 
   appointments: {
     find: async (filter = {}) => {
-      if (db.isMongo) {
-        const docs = await AppointmentModel.find(filter).sort({ appointmentDate: -1, appointmentNumber: 1 }).lean();
-        return docs.map(d => ({ ...d, id: d._id.toString() }));
+      if (db.isPostgres) {
+        const conditions = [];
+        const values = [];
+        let idx = 1;
+
+        if (filter.docId) {
+          conditions.push(`doc_id = $${idx++}`);
+          values.push(filter.docId);
+        }
+        if (filter.patientId) {
+          conditions.push(`patient_id = $${idx++}`);
+          values.push(filter.patientId);
+        }
+        if (filter.scheduleId) {
+          conditions.push(`schedule_id = $${idx++}`);
+          values.push(filter.scheduleId);
+        }
+        if (filter.status) {
+          conditions.push(`status = $${idx++}`);
+          values.push(filter.status);
+        }
+
+        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+        const res = await pgPool.query(
+          `SELECT * FROM appointments ${whereClause} ORDER BY session_date DESC, appointment_number ASC`,
+          values
+        );
+        return res.rows.map(mapAppointment);
       }
+
       let results = localStore.data.appointments.filter(a => {
         for (const [k, v] of Object.entries(filter)) {
           if (a[k] !== v) return false;
@@ -284,21 +469,48 @@ export const db = {
       });
       return results.sort((a, b) => (b.sessionDate || "").localeCompare(a.sessionDate || ""));
     },
+
     findById: async (id) => {
-      if (db.isMongo) {
-        const doc = await AppointmentModel.findById(id).lean();
-        return doc ? { ...doc, id: doc._id.toString() } : null;
+      if (db.isPostgres) {
+        const res = await pgPool.query("SELECT * FROM appointments WHERE id = $1 LIMIT 1", [id]);
+        return res.rows[0] ? mapAppointment(res.rows[0]) : null;
       }
       return localStore.data.appointments.find(a => a.id === id || a._id === id) || null;
     },
+
     create: async (data) => {
-      if (db.isMongo) {
-        const created = await AppointmentModel.create(data);
-        const obj = created.toObject();
-        return { ...obj, id: obj._id.toString() };
+      const id = data.id || "appo-" + Date.now() + "-" + Math.random().toString(36).substr(2, 5);
+      if (db.isPostgres) {
+        const query = `
+          INSERT INTO appointments (
+            id, schedule_id, schedule_title, doc_id, doc_name,
+            patient_id, patient_name, patient_email, patient_phone,
+            appointment_number, appointment_date, session_date, session_time, status
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          RETURNING *
+        `;
+        const values = [
+          id,
+          data.scheduleId,
+          data.scheduleTitle || "",
+          data.docId,
+          data.docName || "",
+          data.patientId,
+          data.patientName || "",
+          data.patientEmail || "",
+          data.patientPhone || "",
+          data.appointmentNumber,
+          data.appointmentDate || new Date().toISOString().split("T")[0],
+          data.sessionDate,
+          data.sessionTime,
+          data.status || "confirmed"
+        ];
+        const res = await pgPool.query(query, values);
+        return mapAppointment(res.rows[0]);
       }
+
       const newItem = {
-        id: "appo-" + Date.now() + "-" + Math.random().toString(36).substr(2, 5),
+        id,
         status: "confirmed",
         createdAt: new Date().toISOString(),
         ...data
@@ -307,27 +519,128 @@ export const db = {
       localStore.save();
       return newItem;
     },
+
     findByIdAndUpdate: async (id, updates) => {
-      if (db.isMongo) {
-        const updated = await AppointmentModel.findByIdAndUpdate(id, updates, { new: true }).lean();
-        return updated ? { ...updated, id: updated._id.toString() } : null;
+      if (db.isPostgres) {
+        const fields = [];
+        const values = [];
+        let idx = 1;
+
+        if (updates.status !== undefined) {
+          fields.push(`status = $${idx++}`);
+          values.push(updates.status);
+        }
+
+        if (fields.length === 0) return await db.appointments.findById(id);
+
+        values.push(id);
+        const query = `UPDATE appointments SET ${fields.join(", ")} WHERE id = $${idx} RETURNING *`;
+        const res = await pgPool.query(query, values);
+        return res.rows[0] ? mapAppointment(res.rows[0]) : null;
       }
+
       const idx = localStore.data.appointments.findIndex(a => a.id === id || a._id === id);
       if (idx === -1) return null;
       localStore.data.appointments[idx] = { ...localStore.data.appointments[idx], ...updates };
       localStore.save();
       return localStore.data.appointments[idx];
     },
+
     findByIdAndDelete: async (id) => {
-      if (db.isMongo) {
-        const deleted = await AppointmentModel.findByIdAndDelete(id).lean();
-        return deleted ? { ...deleted, id: deleted._id.toString() } : null;
+      if (db.isPostgres) {
+        const res = await pgPool.query("DELETE FROM appointments WHERE id = $1 RETURNING *", [id]);
+        return res.rows[0] ? mapAppointment(res.rows[0]) : null;
       }
       const idx = localStore.data.appointments.findIndex(a => a.id === id || a._id === id);
       if (idx === -1) return null;
       const [removed] = localStore.data.appointments.splice(idx, 1);
       localStore.save();
       return removed;
+    },
+
+    // -------------------------------------------------------------------------
+    // True Atomic Booking Transaction with PostgreSQL Row Locking (FOR UPDATE)
+    // Completely eliminates Check-Then-Act Race Conditions!
+    // -------------------------------------------------------------------------
+    bookAtomic: async (scheduleId, user) => {
+      const client = await pgPool.connect();
+      try {
+        await client.query("BEGIN");
+
+        // 1. Lock this specific schedule row exclusively
+        const schedRes = await client.query(
+          "SELECT * FROM schedules WHERE id = $1 FOR UPDATE",
+          [scheduleId]
+        );
+
+        if (schedRes.rows.length === 0) {
+          throw new Error("Selected session does not exist");
+        }
+
+        const schedule = mapSchedule(schedRes.rows[0]);
+        const patientId = user.id || user._id;
+
+        // 2. Check if patient already booked this session
+        const existingRes = await client.query(
+          "SELECT id, appointment_number FROM appointments WHERE schedule_id = $1 AND patient_id = $2 AND status = 'confirmed' LIMIT 1",
+          [scheduleId, patientId]
+        );
+
+        if (existingRes.rows.length > 0) {
+          throw new Error(
+            `You have already booked an appointment for this session (Appointment #${existingRes.rows[0].appointment_number})`
+          );
+        }
+
+        // 3. Strict Capacity Check
+        if (schedule.bookedCount >= schedule.maxAppointments) {
+          throw new Error("This session is fully booked");
+        }
+
+        const apponum = schedule.bookedCount + 1;
+
+        // 4. Atomically update schedule booked_count
+        await client.query(
+          "UPDATE schedules SET booked_count = $1 WHERE id = $2",
+          [apponum, scheduleId]
+        );
+
+        // 5. Insert new appointment record
+        const appoId = "appo-" + Date.now() + "-" + Math.random().toString(36).substr(2, 5);
+        const today = new Date().toISOString().split("T")[0];
+
+        const insertRes = await client.query(
+          `INSERT INTO appointments (
+            id, schedule_id, schedule_title, doc_id, doc_name,
+            patient_id, patient_name, patient_email, patient_phone,
+            appointment_number, appointment_date, session_date, session_time, status
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'confirmed')
+          RETURNING *`,
+          [
+            appoId,
+            scheduleId,
+            schedule.title,
+            schedule.docId,
+            schedule.docName,
+            patientId,
+            user.name,
+            user.email,
+            user.phone || "",
+            apponum,
+            today,
+            schedule.sessionDate,
+            schedule.sessionTime
+          ]
+        );
+
+        await client.query("COMMIT");
+        return mapAppointment(insertRes.rows[0]);
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
+      }
     }
   }
 };
@@ -336,41 +649,83 @@ export const db = {
 // Database Initialization
 // ----------------------------------------------------
 export async function initDatabase() {
-  const uri = process.env.MONGODB_URI;
-  if (!uri && !process.env.TRY_LOCAL_MONGO) {
-    console.log("ℹ️  Running in Embedded Local JSON Database mode with persistent storage.");
-    console.log("   To use MongoDB, set MONGODB_URI in server/.env (e.g. mongodb://localhost:27017/medflow or Atlas URI)");
+  const connectionString = process.env.DATABASE_URL;
+  const pghost = process.env.PGHOST;
+
+  if (!connectionString && !pghost) {
+    console.log("ℹ️  Running in Embedded Local JSON Database mode (server/data/store.json).");
+    console.log("   To connect PostgreSQL/Supabase, set DATABASE_URL in server/.env");
     return;
   }
 
-  const targetUri = uri || "mongodb://localhost:27017/medflow";
   try {
-    console.log(`Connecting to MongoDB at: ${targetUri}...`);
-    await mongoose.connect(targetUri, {
-      serverSelectionTimeoutMS: 2500
-    });
+    let pgModule;
+    try {
+      pgModule = await import("pg");
+    } catch (e) {
+      console.warn("⚠️  'pg' package is not installed yet in server/node_modules.");
+      console.log("   👉 Please run: cd server && npm install");
+      console.log("⚡ Gracefully falling back to embedded persistent storage mode (server/data/store.json).");
+      return;
+    }
 
-    UserModel = mongoose.model("User", userSchema);
-    SpecialtyModel = mongoose.model("Specialty", specialtySchema);
-    ScheduleModel = mongoose.model("Schedule", scheduleSchema);
-    AppointmentModel = mongoose.model("Appointment", appointmentSchema);
+    const { Pool } = pgModule.default;
 
-    db.isMongo = true;
-    console.log("✅ Successfully connected to MongoDB!");
+    const poolConfig = connectionString
+      ? {
+          connectionString,
+          ssl: { rejectUnauthorized: false }
+        }
+      : {
+          host: process.env.PGHOST,
+          port: Number(process.env.PGPORT) || 5432,
+          database: process.env.PGDATABASE || "postgres",
+          user: process.env.PGUSER || "postgres",
+          password: process.env.PGPASSWORD,
+          ssl: { rejectUnauthorized: false }
+        };
 
-    // Seed if collection is empty
-    const specialtyCount = await SpecialtyModel.countDocuments();
-    if (specialtyCount === 0) {
-      console.log("🌱 Seeding MongoDB initial data...");
-      await SpecialtyModel.insertMany(initialSpecialties);
-      await UserModel.insertMany(initialUsers);
-      await ScheduleModel.insertMany(initialSchedules);
-      await AppointmentModel.insertMany(initialAppointments);
-      console.log("🌱 Seed complete!");
+    console.log(`📡 Connecting to PostgreSQL database...`);
+    pgPool = new Pool(poolConfig);
+
+    // Test connection with a fast ping
+    const ping = await pgPool.query("SELECT NOW()");
+    console.log("✅ Successfully connected to PostgreSQL / Supabase! Server time:", ping.rows[0].now);
+
+    // Ensure schema tables exist
+    const schemaFile = path.join(__dirname, "schema.sql");
+    if (fs.existsSync(schemaFile)) {
+      const schemaSql = fs.readFileSync(schemaFile, "utf-8");
+      await pgPool.query(schemaSql);
+      console.log("📋 Verified PostgreSQL relational schema tables.");
+    }
+
+    db.isPostgres = true;
+
+    // Seed initial data if empty
+    const specCount = await pgPool.query("SELECT COUNT(*) FROM specialties");
+    if (Number(specCount.rows[0].count) === 0) {
+      console.log("🌱 Seeding initial PostgreSQL data (Specialties, Users, Schedules, Appointments)...");
+      for (const s of initialSpecialties) {
+        await pgPool.query("INSERT INTO specialties (id, sname) VALUES ($1, $2) ON CONFLICT DO NOTHING", [
+          s.id,
+          s.sname
+        ]);
+      }
+      for (const u of initialUsers) {
+        await db.users.create(u);
+      }
+      for (const sc of initialSchedules) {
+        await db.schedules.create(sc);
+      }
+      for (const a of initialAppointments) {
+        await db.appointments.create(a);
+      }
+      console.log("🌱 Seeding complete!");
     }
   } catch (err) {
-    console.warn("⚠️  MongoDB connection failed (" + err.message + ")");
+    console.warn("⚠️  PostgreSQL connection failed (" + err.message + ")");
     console.log("⚡ Seamlessly falling back to embedded persistent storage mode (server/data/store.json).");
-    db.isMongo = false;
+    db.isPostgres = false;
   }
 }

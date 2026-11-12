@@ -32,6 +32,16 @@ router.post("/", authenticate, async (req, res) => {
       return res.status(400).json({ error: "Schedule ID is required" });
     }
 
+    // Use PostgreSQL Atomic Transaction with Row Locking (FOR UPDATE) if active
+    if (db.isPostgres && typeof db.appointments.bookAtomic === "function") {
+      try {
+        const appointment = await db.appointments.bookAtomic(scheduleId, req.user);
+        return res.status(201).json(appointment);
+      } catch (atomicErr) {
+        return res.status(400).json({ error: atomicErr.message || "Failed to book appointment" });
+      }
+    }
+
     const schedule = await db.schedules.findById(scheduleId);
     if (!schedule) {
       return res.status(404).json({ error: "Selected session does not exist" });

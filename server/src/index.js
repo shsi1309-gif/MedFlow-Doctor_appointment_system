@@ -1,7 +1,13 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 import { initDatabase, db } from "./db.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.join(__dirname, "../.env") });
 
 import authRoutes from "./routes/auth.js";
 import specialtyRoutes from "./routes/specialties.js";
@@ -11,7 +17,6 @@ import scheduleRoutes from "./routes/schedules.js";
 import appointmentRoutes from "./routes/appointments.js";
 import statsRoutes from "./routes/stats.js";
 
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -30,8 +35,12 @@ app.use((req, res, next) => {
 app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",
-    system: "Medflow Doctor Appointment System API (MERN Stack)",
-    dbEngine: db.isMongo ? "MongoDB (Active)" : "Embedded Persistent Store (Active)",
+    system: "Medflow Doctor Appointment System API (PERN/MERN)",
+    dbEngine: db.isPostgres
+      ? "PostgreSQL / Supabase (Active)"
+      : db.isMongo
+      ? "MongoDB (Active)"
+      : "Embedded Persistent Store (Active)",
     timestamp: new Date().toISOString()
   });
 });
@@ -63,7 +72,15 @@ async function start() {
     console.log(`===============================================`);
     console.log(`🚀 Medflow MERN Backend Server running on port ${PORT}`);
     console.log(`📡 URL: http://localhost:${PORT}`);
-    console.log(`🗄️  Database: ${db.isMongo ? "MongoDB" : "Embedded Local Database (Auto-fallback)"}`);
+    console.log(
+      `🗄️  Database: ${
+        db.isPostgres
+          ? "PostgreSQL / Supabase (Active)"
+          : db.isMongo
+          ? "MongoDB"
+          : "Embedded Local Database (Auto-fallback)"
+      }`
+    );
     console.log(`===============================================`);
   });
 }
