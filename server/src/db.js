@@ -57,7 +57,7 @@ class LocalStore {
 const localStore = new LocalStore();
 
 // ----------------------------------------------------
-// PostgreSQL Helpers & Column Name Mappings
+// PostgreSQL Helpers & Column Mappings
 // ----------------------------------------------------
 let pgPool = null;
 
@@ -126,6 +126,69 @@ export const db = {
   isPostgres: false,
   isMongo: false,
 
+  // Direct access to dedicated tables
+  admins: {
+    find: async () => {
+      if (db.isPostgres) {
+        const res = await pgPool.query("SELECT id, email, password, name, phone, 'admin' AS role, created_at FROM admins ORDER BY created_at DESC");
+        return res.rows.map(mapUser);
+      }
+      return localStore.data.users.filter(u => u.role === "admin");
+    },
+    findById: async (id) => {
+      if (db.isPostgres) {
+        const res = await pgPool.query("SELECT id, email, password, name, phone, 'admin' AS role, created_at FROM admins WHERE id = $1", [id]);
+        return res.rows[0] ? mapUser(res.rows[0]) : null;
+      }
+      return localStore.data.users.find(u => u.role === "admin" && (u.id === id || u._id === id)) || null;
+    }
+  },
+
+  doctors: {
+    find: async (filter = {}) => {
+      if (db.isPostgres) {
+        let query = "SELECT id, email, password, name, phone, nic, specialty_id, specialty_name, 'doctor' AS role, created_at FROM doctors";
+        const conditions = [];
+        const values = [];
+        let idx = 1;
+        if (filter.specialtyId) {
+          conditions.push(`specialty_id = $${idx++}`);
+          values.push(filter.specialtyId);
+        }
+        if (conditions.length > 0) query += " WHERE " + conditions.join(" AND ");
+        query += " ORDER BY created_at DESC";
+        const res = await pgPool.query(query, values);
+        return res.rows.map(mapUser);
+      }
+      return localStore.data.users.filter(u => u.role === "doctor");
+    },
+    findById: async (id) => {
+      if (db.isPostgres) {
+        const res = await pgPool.query("SELECT id, email, password, name, phone, nic, specialty_id, specialty_name, 'doctor' AS role, created_at FROM doctors WHERE id = $1", [id]);
+        return res.rows[0] ? mapUser(res.rows[0]) : null;
+      }
+      return localStore.data.users.find(u => u.role === "doctor" && (u.id === id || u._id === id)) || null;
+    }
+  },
+
+  patients: {
+    find: async () => {
+      if (db.isPostgres) {
+        const res = await pgPool.query("SELECT id, email, password, name, phone, nic, dob, address, 'patient' AS role, created_at FROM patients ORDER BY created_at DESC");
+        return res.rows.map(mapUser);
+      }
+      return localStore.data.users.filter(u => u.role === "patient");
+    },
+    findById: async (id) => {
+      if (db.isPostgres) {
+        const res = await pgPool.query("SELECT id, email, password, name, phone, nic, dob, address, 'patient' AS role, created_at FROM patients WHERE id = $1", [id]);
+        return res.rows[0] ? mapUser(res.rows[0]) : null;
+      }
+      return localStore.data.users.find(u => u.role === "patient" && (u.id === id || u._id === id)) || null;
+    }
+  },
+
+  // Unified Users Gateway (uses users VIEW in PostgreSQL for single $O(1)$ auth lookups)
   users: {
     find: async (filter = {}) => {
       if (db.isPostgres) {
@@ -197,27 +260,47 @@ export const db = {
 
     create: async (data) => {
       const id = data.id || "user-" + Date.now() + "-" + Math.random().toString(36).substr(2, 5);
+      const role = data.role || "patient";
+
       if (db.isPostgres) {
-        const query = `
-          INSERT INTO users (id, email, password, role, name, phone, nic, dob, address, specialty_id, specialty_name)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-          RETURNING *
-        `;
-        const values = [
-          id,
-          data.email.toLowerCase(),
-          data.password,
-          data.role || "patient",
-          data.name,
-          data.phone || "",
-          data.nic || "",
-          data.dob || "",
-          data.address || "",
-          data.specialtyId || null,
-          data.specialtyName || ""
-        ];
-        const res = await pgPool.query(query, values);
-        return mapUser(res.rows[0]);
+        if (role === "admin") {
+          const res = await pgPool.query(
+            "INSERT INTO admins (id, email, password, name, phone) VALUES ($1, $2, $3, $4, $5) RETURNING id, email, password, name, phone, 'admin' AS role, created_at",
+            [id, data.email.toLowerCase(), data.password, data.name, data.phone || ""]
+          );
+          return mapUser(res.rows[0]);
+        } else if (role === "doctor") {
+          const res = await pgPool.query(
+            "INSERT INTO doctors (id, email, password, name, phone, nic, specialty_id, specialty_name) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, email, password, name, phone, nic, specialty_id, specialty_name, 'doctor' AS role, created_at",
+            [
+              id,
+              data.email.toLowerCase(),
+              data.password,
+              data.name,
+              data.phone || "",
+              data.nic || "",
+              data.specialtyId || null,
+              data.specialtyName || ""
+            ]
+          );
+          return mapUser(res.rows[0]);
+        } else {
+          // Patient
+          const res = await pgPool.query(
+            "INSERT INTO patients (id, email, password, name, phone, nic, dob, address) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, email, password, name, phone, nic, dob, address, 'patient' AS role, created_at",
+            [
+              id,
+              data.email.toLowerCase(),
+              data.password,
+              data.name,
+              data.phone || "",
+              data.nic || "",
+              data.dob || "",
+              data.address || ""
+            ]
+          );
+          return mapUser(res.rows[0]);
+        }
       }
 
       const newItem = {
@@ -232,34 +315,64 @@ export const db = {
 
     findByIdAndUpdate: async (id, updates) => {
       if (db.isPostgres) {
+        // Find existing record to know which table to update
+        const existing = await db.users.findById(id);
+        if (!existing) return null;
+
+        const role = existing.role;
+        const targetTable = role === "admin" ? "admins" : role === "doctor" ? "doctors" : "patients";
+
         const fields = [];
         const values = [];
         let idx = 1;
 
-        const fieldMapping = {
-          name: "name",
-          password: "password",
-          phone: "phone",
-          nic: "nic",
-          dob: "dob",
-          address: "address",
-          specialtyId: "specialty_id",
-          specialtyName: "specialty_name"
-        };
-
-        for (const [key, col] of Object.entries(fieldMapping)) {
-          if (updates[key] !== undefined) {
-            fields.push(`${col} = $${idx++}`);
-            values.push(updates[key]);
+        if (updates.name !== undefined) {
+          fields.push(`name = $${idx++}`);
+          values.push(updates.name);
+        }
+        if (updates.password !== undefined) {
+          fields.push(`password = $${idx++}`);
+          values.push(updates.password);
+        }
+        if (updates.phone !== undefined) {
+          fields.push(`phone = $${idx++}`);
+          values.push(updates.phone);
+        }
+        if (role === "doctor") {
+          if (updates.nic !== undefined) {
+            fields.push(`nic = $${idx++}`);
+            values.push(updates.nic);
+          }
+          if (updates.specialtyId !== undefined) {
+            fields.push(`specialty_id = $${idx++}`);
+            values.push(updates.specialtyId);
+          }
+          if (updates.specialtyName !== undefined) {
+            fields.push(`specialty_name = $${idx++}`);
+            values.push(updates.specialtyName);
+          }
+        }
+        if (role === "patient") {
+          if (updates.nic !== undefined) {
+            fields.push(`nic = $${idx++}`);
+            values.push(updates.nic);
+          }
+          if (updates.dob !== undefined) {
+            fields.push(`dob = $${idx++}`);
+            values.push(updates.dob);
+          }
+          if (updates.address !== undefined) {
+            fields.push(`address = $${idx++}`);
+            values.push(updates.address);
           }
         }
 
-        if (fields.length === 0) return await db.users.findById(id);
+        if (fields.length === 0) return existing;
 
         values.push(id);
-        const query = `UPDATE users SET ${fields.join(", ")} WHERE id = $${idx} RETURNING *`;
-        const res = await pgPool.query(query, values);
-        return res.rows[0] ? mapUser(res.rows[0]) : null;
+        const query = `UPDATE ${targetTable} SET ${fields.join(", ")} WHERE id = $${idx} RETURNING *`;
+        await pgPool.query(query, values);
+        return await db.users.findById(id);
       }
 
       const idx = localStore.data.users.findIndex(u => u.id === id || u._id === id);
@@ -271,8 +384,13 @@ export const db = {
 
     findByIdAndDelete: async (id) => {
       if (db.isPostgres) {
-        const res = await pgPool.query("DELETE FROM users WHERE id = $1 RETURNING *", [id]);
-        return res.rows[0] ? mapUser(res.rows[0]) : null;
+        const existing = await db.users.findById(id);
+        if (!existing) return null;
+
+        const role = existing.role;
+        const targetTable = role === "admin" ? "admins" : role === "doctor" ? "doctors" : "patients";
+        await pgPool.query(`DELETE FROM ${targetTable} WHERE id = $1`, [id]);
+        return existing;
       }
       const idx = localStore.data.users.findIndex(u => u.id === id || u._id === id);
       if (idx === -1) return null;
@@ -558,16 +676,13 @@ export const db = {
       return removed;
     },
 
-    // -------------------------------------------------------------------------
     // True Atomic Booking Transaction with PostgreSQL Row Locking (FOR UPDATE)
-    // Completely eliminates Check-Then-Act Race Conditions!
-    // -------------------------------------------------------------------------
     bookAtomic: async (scheduleId, user) => {
       const client = await pgPool.connect();
       try {
         await client.query("BEGIN");
 
-        // 1. Lock this specific schedule row exclusively
+        // Lock schedule row exclusively
         const schedRes = await client.query(
           "SELECT * FROM schedules WHERE id = $1 FOR UPDATE",
           [scheduleId]
@@ -580,7 +695,7 @@ export const db = {
         const schedule = mapSchedule(schedRes.rows[0]);
         const patientId = user.id || user._id;
 
-        // 2. Check if patient already booked this session
+        // Check if patient already booked
         const existingRes = await client.query(
           "SELECT id, appointment_number FROM appointments WHERE schedule_id = $1 AND patient_id = $2 AND status = 'confirmed' LIMIT 1",
           [scheduleId, patientId]
@@ -592,20 +707,20 @@ export const db = {
           );
         }
 
-        // 3. Strict Capacity Check
+        // Strict Capacity Check
         if (schedule.bookedCount >= schedule.maxAppointments) {
           throw new Error("This session is fully booked");
         }
 
         const apponum = schedule.bookedCount + 1;
 
-        // 4. Atomically update schedule booked_count
+        // Atomically update schedule booked_count
         await client.query(
           "UPDATE schedules SET booked_count = $1 WHERE id = $2",
           [apponum, scheduleId]
         );
 
-        // 5. Insert new appointment record
+        // Insert new appointment record
         const appoId = "appo-" + Date.now() + "-" + Math.random().toString(36).substr(2, 5);
         const today = new Date().toISOString().split("T")[0];
 
@@ -692,36 +807,48 @@ export async function initDatabase() {
     const ping = await pgPool.query("SELECT NOW()");
     console.log("✅ Successfully connected to PostgreSQL / Supabase! Server time:", ping.rows[0].now);
 
-    // Ensure schema tables exist
+    // Ensure schema tables exist (admins, doctors, patients, schedules, appointments)
     const schemaFile = path.join(__dirname, "schema.sql");
     if (fs.existsSync(schemaFile)) {
       const schemaSql = fs.readFileSync(schemaFile, "utf-8");
       await pgPool.query(schemaSql);
-      console.log("📋 Verified PostgreSQL relational schema tables.");
+      console.log("📋 Verified PostgreSQL separate relational tables (admins, doctors, patients, schedules, appointments).");
     }
 
     db.isPostgres = true;
 
     // Seed initial data if empty
-    const specCount = await pgPool.query("SELECT COUNT(*) FROM specialties");
-    if (Number(specCount.rows[0].count) === 0) {
-      console.log("🌱 Seeding initial PostgreSQL data (Specialties, Users, Schedules, Appointments)...");
+    const adminCount = await pgPool.query("SELECT COUNT(*) FROM admins");
+    const docCount = await pgPool.query("SELECT COUNT(*) FROM doctors");
+    const patCount = await pgPool.query("SELECT COUNT(*) FROM patients");
+
+    if (Number(adminCount.rows[0].count) === 0 && Number(docCount.rows[0].count) === 0 && Number(patCount.rows[0].count) === 0) {
+      console.log("🌱 Seeding initial PostgreSQL data into dedicated tables...");
+
+      // 1. Specialties
       for (const s of initialSpecialties) {
         await pgPool.query("INSERT INTO specialties (id, sname) VALUES ($1, $2) ON CONFLICT DO NOTHING", [
           s.id,
           s.sname
         ]);
       }
+
+      // 2. Separate Users
       for (const u of initialUsers) {
         await db.users.create(u);
       }
+
+      // 3. Schedules
       for (const sc of initialSchedules) {
         await db.schedules.create(sc);
       }
+
+      // 4. Appointments
       for (const a of initialAppointments) {
         await db.appointments.create(a);
       }
-      console.log("🌱 Seeding complete!");
+
+      console.log("🌱 Seeding complete! All separate tables populated.");
     }
   } catch (err) {
     console.warn("⚠️  PostgreSQL connection failed (" + err.message + ")");
