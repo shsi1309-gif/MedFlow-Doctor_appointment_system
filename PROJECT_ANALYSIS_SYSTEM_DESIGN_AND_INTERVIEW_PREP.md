@@ -289,19 +289,10 @@ erDiagram
 
     APPOINTMENT {
         string id PK
-        string scheduleId FK
-        string scheduleTitle
-        string docId FK
-        string docName
-        string patientId FK
-        string patientName
-        string patientEmail
-        string patientPhone
+        string scheduleId FK "References schedules(id)"
+        string patientId FK "References patients(id)"
         int appointmentNumber "Sequential Token Number"
-        string appointmentDate
-        string sessionDate
-        string sessionTime
-        string status
+        string status "confirmed | cancelled | completed"
         date createdAt
     }
 ```

@@ -90,30 +90,33 @@ CREATE INDEX IF NOT EXISTS idx_schedules_doc ON schedules (doc_id);
 CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules (session_date);
 
 -- -----------------------------------------------------------------------------
--- 5. Appointments — References doctors(id) and patients(id)
+-- 5. Appointments (Normalized 6-Column Core Table)
+-- References schedules(id) and patients(id); doctor info resolved via schedules.doc_id
 -- -----------------------------------------------------------------------------
+DO $$
+BEGIN
+  -- If appointments table has legacy denormalized columns, drop and recreate cleanly
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'appointments' AND column_name = 'doc_name'
+  ) THEN
+    DROP TABLE appointments CASCADE;
+  END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS appointments (
     id VARCHAR(64) PRIMARY KEY,
     schedule_id VARCHAR(64) NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
-    schedule_title VARCHAR(255),
-    doc_id VARCHAR(64) NOT NULL REFERENCES doctors(id) ON DELETE CASCADE,
-    doc_name VARCHAR(255),
     patient_id VARCHAR(64) NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
-    patient_name VARCHAR(255),
-    patient_email VARCHAR(255),
-    patient_phone VARCHAR(64),
     appointment_number INT NOT NULL,
-    appointment_date VARCHAR(32) NOT NULL,
-    session_date VARCHAR(32) NOT NULL,
-    session_time VARCHAR(32) NOT NULL,
     status VARCHAR(32) NOT NULL DEFAULT 'confirmed' CHECK (status IN ('confirmed', 'cancelled', 'completed')),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    -- Concurrency Guard: Enforce strict uniqueness of consultation token per session
     CONSTRAINT uq_schedule_appointment_token UNIQUE (schedule_id, appointment_number)
 );
 
 CREATE INDEX IF NOT EXISTS idx_appointments_schedule ON appointments (schedule_id);
 CREATE INDEX IF NOT EXISTS idx_appointments_patient ON appointments (patient_id);
-CREATE INDEX IF NOT EXISTS idx_appointments_doc ON appointments (doc_id);
 
 -- -----------------------------------------------------------------------------
 -- 6. Unified Auth View: Combines admins, doctors, and patients

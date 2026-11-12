@@ -101,25 +101,53 @@ function mapSchedule(row) {
 
 function mapAppointment(row) {
   if (!row) return null;
+  const appDate = row.appointment_date || (row.created_at ? new Date(row.created_at).toISOString().split("T")[0] : "");
   return {
     id: row.id,
     _id: row.id,
     scheduleId: row.schedule_id,
-    scheduleTitle: row.schedule_title,
+    scheduleTitle: row.schedule_title || "",
     docId: row.doc_id,
-    docName: row.doc_name,
+    docName: row.doc_name || "",
+    specialtyName: row.specialty_name || "",
     patientId: row.patient_id,
-    patientName: row.patient_name,
-    patientEmail: row.patient_email,
+    patientName: row.patient_name || "",
+    patientEmail: row.patient_email || "",
     patientPhone: row.patient_phone || "",
     appointmentNumber: Number(row.appointment_number),
-    appointmentDate: row.appointment_date,
-    sessionDate: row.session_date,
-    sessionTime: row.session_time,
+    appointmentDate: appDate,
+    sessionDate: row.session_date || "",
+    sessionTime: row.session_time || "",
     status: row.status,
     createdAt: row.created_at
   };
 }
+
+const JOINED_APPOINTMENT_SQL = `
+  SELECT 
+    a.id,
+    a.schedule_id,
+    a.patient_id,
+    a.appointment_number,
+    a.status,
+    a.created_at,
+    -- Joined from schedules:
+    s.title AS schedule_title,
+    s.session_date,
+    s.session_time,
+    s.doc_id,
+    -- Joined from doctors:
+    d.name AS doc_name,
+    d.specialty AS specialty_name,
+    -- Joined from patients:
+    p.name AS patient_name,
+    p.email AS patient_email,
+    p.phone AS patient_phone
+  FROM appointments a
+  JOIN schedules s ON a.schedule_id = s.id
+  JOIN doctors d ON s.doc_id = d.id
+  JOIN patients p ON a.patient_id = p.id
+`;
 
 // ----------------------------------------------------
 // Unified Database Interface
@@ -541,32 +569,34 @@ export const db = {
   appointments: {
     find: async (filter = {}) => {
       if (db.isPostgres) {
+        let query = JOINED_APPOINTMENT_SQL;
         const conditions = [];
         const values = [];
         let idx = 1;
 
         if (filter.docId) {
-          conditions.push(`doc_id = $${idx++}`);
+          conditions.push(`s.doc_id = $${idx++}`);
           values.push(filter.docId);
         }
         if (filter.patientId) {
-          conditions.push(`patient_id = $${idx++}`);
+          conditions.push(`a.patient_id = $${idx++}`);
           values.push(filter.patientId);
         }
         if (filter.scheduleId) {
-          conditions.push(`schedule_id = $${idx++}`);
+          conditions.push(`a.schedule_id = $${idx++}`);
           values.push(filter.scheduleId);
         }
         if (filter.status) {
-          conditions.push(`status = $${idx++}`);
+          conditions.push(`a.status = $${idx++}`);
           values.push(filter.status);
         }
 
-        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-        const res = await pgPool.query(
-          `SELECT * FROM appointments ${whereClause} ORDER BY session_date DESC, appointment_number ASC`,
-          values
-        );
+        if (conditions.length > 0) {
+          query += ` WHERE ${conditions.join(" AND ")}`;
+        }
+        query += ` ORDER BY s.session_date DESC, a.appointment_number ASC`;
+
+        const res = await pgPool.query(query, values);
         return res.rows.map(mapAppointment);
       }
 
@@ -581,7 +611,8 @@ export const db = {
 
     findById: async (id) => {
       if (db.isPostgres) {
-        const res = await pgPool.query("SELECT * FROM appointments WHERE id = $1 LIMIT 1", [id]);
+        const query = `${JOINED_APPOINTMENT_SQL} WHERE a.id = $1 LIMIT 1`;
+        const res = await pgPool.query(query, [id]);
         return res.rows[0] ? mapAppointment(res.rows[0]) : null;
       }
       return localStore.data.appointments.find(a => a.id === id || a._id === id) || null;
@@ -591,31 +622,18 @@ export const db = {
       const id = data.id || "appo-" + Date.now() + "-" + Math.random().toString(36).substr(2, 5);
       if (db.isPostgres) {
         const query = `
-          INSERT INTO appointments (
-            id, schedule_id, schedule_title, doc_id, doc_name,
-            patient_id, patient_name, patient_email, patient_phone,
-            appointment_number, appointment_date, session_date, session_time, status
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-          RETURNING *
+          INSERT INTO appointments (id, schedule_id, patient_id, appointment_number, status)
+          VALUES ($1, $2, $3, $4, $5)
         `;
         const values = [
           id,
           data.scheduleId,
-          data.scheduleTitle || "",
-          data.docId,
-          data.docName || "",
           data.patientId,
-          data.patientName || "",
-          data.patientEmail || "",
-          data.patientPhone || "",
           data.appointmentNumber,
-          data.appointmentDate || new Date().toISOString().split("T")[0],
-          data.sessionDate,
-          data.sessionTime,
           data.status || "confirmed"
         ];
-        const res = await pgPool.query(query, values);
-        return mapAppointment(res.rows[0]);
+        await pgPool.query(query, values);
+        return await db.appointments.findById(id);
       }
 
       const newItem = {
@@ -643,9 +661,9 @@ export const db = {
         if (fields.length === 0) return await db.appointments.findById(id);
 
         values.push(id);
-        const query = `UPDATE appointments SET ${fields.join(", ")} WHERE id = $${idx} RETURNING *`;
-        const res = await pgPool.query(query, values);
-        return res.rows[0] ? mapAppointment(res.rows[0]) : null;
+        const query = `UPDATE appointments SET ${fields.join(", ")} WHERE id = $${idx}`;
+        await pgPool.query(query, values);
+        return await db.appointments.findById(id);
       }
 
       const idx = localStore.data.appointments.findIndex(a => a.id === id || a._id === id);
@@ -657,8 +675,9 @@ export const db = {
 
     findByIdAndDelete: async (id) => {
       if (db.isPostgres) {
-        const res = await pgPool.query("DELETE FROM appointments WHERE id = $1 RETURNING *", [id]);
-        return res.rows[0] ? mapAppointment(res.rows[0]) : null;
+        const existing = await db.appointments.findById(id);
+        await pgPool.query("DELETE FROM appointments WHERE id = $1", [id]);
+        return existing;
       }
       const idx = localStore.data.appointments.findIndex(a => a.id === id || a._id === id);
       if (idx === -1) return null;
@@ -708,34 +727,15 @@ export const db = {
         );
 
         const appoId = "appo-" + Date.now() + "-" + Math.random().toString(36).substr(2, 5);
-        const today = new Date().toISOString().split("T")[0];
 
-        const insertRes = await client.query(
-          `INSERT INTO appointments (
-            id, schedule_id, schedule_title, doc_id, doc_name,
-            patient_id, patient_name, patient_email, patient_phone,
-            appointment_number, appointment_date, session_date, session_time, status
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'confirmed')
-          RETURNING *`,
-          [
-            appoId,
-            scheduleId,
-            schedule.title,
-            schedule.docId,
-            schedule.docName,
-            patientId,
-            user.name,
-            user.email,
-            user.phone || "",
-            apponum,
-            today,
-            schedule.sessionDate,
-            schedule.sessionTime
-          ]
+        await client.query(
+          `INSERT INTO appointments (id, schedule_id, patient_id, appointment_number, status)
+           VALUES ($1, $2, $3, $4, 'confirmed')`,
+          [appoId, scheduleId, patientId, apponum]
         );
 
         await client.query("COMMIT");
-        return mapAppointment(insertRes.rows[0]);
+        return await db.appointments.findById(appoId);
       } catch (err) {
         await client.query("ROLLBACK");
         throw err;
