@@ -77,7 +77,6 @@ function mapUser(row) {
     address: row.address || "",
     specialty: spec,
     specialtyName: spec,
-    specialtyId: row.specialty_id ? Number(row.specialty_id) : undefined,
     createdAt: row.created_at
   };
 }

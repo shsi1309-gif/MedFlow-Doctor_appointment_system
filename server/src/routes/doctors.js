@@ -23,7 +23,9 @@ router.get("/", async (req, res) => {
 
     if (specialty) {
       doctors = doctors.filter(
-        d => String(d.specialtyId) === String(specialty) || d.specialtyName === specialty
+        d =>
+          (d.specialty && d.specialty.toLowerCase() === specialty.toLowerCase()) ||
+          (d.specialtyName && d.specialtyName.toLowerCase() === specialty.toLowerCase())
       );
     }
 
@@ -63,7 +65,7 @@ router.post("/", authenticate, authorize("admin"), async (req, res) => {
     }
 
     const specialtyObj = await db.specialties.findById(specialtyId);
-    const specialtyName = specialtyObj ? specialtyObj.sname : "General Practice";
+    const specialtyName = specialtyObj ? specialtyObj.sname : (req.body.specialty || "General Practice");
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const newDoctor = await db.users.create({
@@ -73,7 +75,7 @@ router.post("/", authenticate, authorize("admin"), async (req, res) => {
       password: hashedPassword,
       nic: nic || "",
       phone: phone || "",
-      specialtyId: Number(specialtyId),
+      specialty: specialtyName,
       specialtyName
     });
 
@@ -101,11 +103,12 @@ router.put("/:id", authenticate, async (req, res) => {
       delete updates.password;
     }
 
-    if (updates.specialtyId) {
-      const specialtyObj = await db.specialties.findById(updates.specialtyId);
-      if (specialtyObj) {
-        updates.specialtyName = specialtyObj.sname;
-      }
+    if (updates.specialtyId || updates.specialty) {
+      const specialtyObj = updates.specialtyId ? await db.specialties.findById(updates.specialtyId) : null;
+      const specName = updates.specialty || (specialtyObj ? specialtyObj.sname : "General Practice");
+      updates.specialty = specName;
+      updates.specialtyName = specName;
+      delete updates.specialtyId;
     }
 
     delete updates.role; // Prevent changing role

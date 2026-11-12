@@ -36,6 +36,10 @@ CREATE TABLE IF NOT EXISTS doctors (
 -- Ensure specialty column exists if doctors table was created previously
 ALTER TABLE doctors ADD COLUMN IF NOT EXISTS specialty VARCHAR(255) DEFAULT 'General Practice';
 
+-- Drop legacy specialty_id and specialty_name columns from doctors
+ALTER TABLE doctors DROP COLUMN IF EXISTS specialty_id CASCADE;
+ALTER TABLE doctors DROP COLUMN IF EXISTS specialty_name CASCADE;
+
 -- Drop legacy specialty_id foreign key constraint and specialties table
 DO $$
 BEGIN
@@ -124,8 +128,8 @@ CREATE INDEX IF NOT EXISTS idx_appointments_patient ON appointments (patient_id)
 DROP VIEW IF EXISTS users CASCADE;
 
 CREATE OR REPLACE VIEW users AS
-  SELECT id, email, password, 'admin' AS role, name, phone, '' AS nic, '' AS dob, '' AS address, NULL::INT AS specialty_id, '' AS specialty_name, '' AS specialty, created_at FROM admins
+  SELECT id, email, password, 'admin' AS role, name, phone, '' AS nic, '' AS dob, '' AS address, '' AS specialty_name, '' AS specialty, created_at FROM admins
   UNION ALL
-  SELECT id, email, password, 'doctor' AS role, name, phone, nic, '' AS dob, '' AS address, NULL::INT AS specialty_id, specialty AS specialty_name, specialty, created_at FROM doctors
+  SELECT id, email, password, 'doctor' AS role, name, phone, nic, '' AS dob, '' AS address, specialty AS specialty_name, specialty, created_at FROM doctors
   UNION ALL
-  SELECT id, email, password, 'patient' AS role, name, phone, nic, dob, address, NULL::INT AS specialty_id, '' AS specialty_name, '' AS specialty, created_at FROM patients;
+  SELECT id, email, password, 'patient' AS role, name, phone, nic, dob, address, '' AS specialty_name, '' AS specialty, created_at FROM patients;
