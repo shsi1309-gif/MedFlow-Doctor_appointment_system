@@ -63,7 +63,8 @@ let pgPool = null;
 
 function mapUser(row) {
   if (!row) return null;
-  const spec = row.specialty || row.specialty_name || "";
+  const spec = row.specialty_name || row.sname || row.specialty || "";
+  const specId = row.specialty_id ? Number(row.specialty_id) : undefined;
   return {
     id: row.id,
     _id: row.id,
@@ -75,6 +76,7 @@ function mapUser(row) {
     nic: row.nic || "",
     dob: row.dob || "",
     address: row.address || "",
+    specialtyId: specId,
     specialty: spec,
     specialtyName: spec,
     createdAt: row.created_at
@@ -137,7 +139,7 @@ const JOINED_APPOINTMENT_SQL = `
     s.doc_id,
     -- Joined from doctors:
     d.name AS doc_name,
-    d.specialty AS specialty_name,
+    COALESCE(sp.sname, '') AS specialty_name,
     -- Joined from patients:
     p.name AS patient_name,
     p.email AS patient_email,
@@ -145,6 +147,7 @@ const JOINED_APPOINTMENT_SQL = `
   FROM appointments a
   JOIN schedules s ON a.schedule_id = s.id
   JOIN doctors d ON s.doc_id = d.id
+  LEFT JOIN specialties sp ON d.specialty_id = sp.id
   JOIN patients p ON a.patient_id = p.id
 `;
 
@@ -154,6 +157,24 @@ const JOINED_APPOINTMENT_SQL = `
 export const db = {
   isPostgres: false,
   isMongo: false,
+
+  // Dedicated Specialties Table
+  specialties: {
+    find: async () => {
+      if (db.isPostgres) {
+        const res = await pgPool.query("SELECT id, sname FROM specialties ORDER BY sname ASC");
+        return res.rows;
+      }
+      return [...localStore.data.specialties].sort((a, b) => a.sname.localeCompare(b.sname));
+    },
+    findById: async (id) => {
+      if (db.isPostgres) {
+        const res = await pgPool.query("SELECT id, sname FROM specialties WHERE id = $1 LIMIT 1", [Number(id)]);
+        return res.rows[0] || null;
+      }
+      return localStore.data.specialties.find(s => s.id === Number(id)) || null;
+    }
+  },
 
   // Dedicated Admins Table
   admins: {
@@ -173,20 +194,24 @@ export const db = {
     }
   },
 
-  // Dedicated Doctors Table (specialty stored directly as a column)
+  // Dedicated Doctors Table (stores specialty_id referencing specialties table)
   doctors: {
     find: async (filter = {}) => {
       if (db.isPostgres) {
-        let query = "SELECT id, email, password, name, phone, nic, specialty, 'doctor' AS role, created_at FROM doctors";
+        let query = `
+          SELECT d.id, d.email, d.password, d.name, d.phone, d.nic, d.specialty_id, s.sname AS specialty_name, 'doctor' AS role, d.created_at
+          FROM doctors d
+          LEFT JOIN specialties s ON d.specialty_id = s.id
+        `;
         const conditions = [];
         const values = [];
         let idx = 1;
-        if (filter.specialty) {
-          conditions.push(`LOWER(specialty) = LOWER($${idx++})`);
-          values.push(filter.specialty);
+        if (filter.specialtyId) {
+          conditions.push(`d.specialty_id = $${idx++}`);
+          values.push(filter.specialtyId);
         }
         if (conditions.length > 0) query += " WHERE " + conditions.join(" AND ");
-        query += " ORDER BY created_at DESC";
+        query += " ORDER BY d.created_at DESC";
         const res = await pgPool.query(query, values);
         return res.rows.map(mapUser);
       }
@@ -194,7 +219,13 @@ export const db = {
     },
     findById: async (id) => {
       if (db.isPostgres) {
-        const res = await pgPool.query("SELECT id, email, password, name, phone, nic, specialty, 'doctor' AS role, created_at FROM doctors WHERE id = $1", [id]);
+        const query = `
+          SELECT d.id, d.email, d.password, d.name, d.phone, d.nic, d.specialty_id, s.sname AS specialty_name, 'doctor' AS role, d.created_at
+          FROM doctors d
+          LEFT JOIN specialties s ON d.specialty_id = s.id
+          WHERE d.id = $1
+        `;
+        const res = await pgPool.query(query, [id]);
         return res.rows[0] ? mapUser(res.rows[0]) : null;
       }
       return localStore.data.users.find(u => u.role === "doctor" && (u.id === id || u._id === id)) || null;
@@ -301,9 +332,9 @@ export const db = {
           );
           return mapUser(res.rows[0]);
         } else if (role === "doctor") {
-          const spec = data.specialty || data.specialtyName || "General Practice";
+          const specId = data.specialtyId ? Number(data.specialtyId) : 1;
           const res = await pgPool.query(
-            "INSERT INTO doctors (id, email, password, name, phone, nic, specialty) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, email, password, name, phone, nic, specialty, 'doctor' AS role, created_at",
+            "INSERT INTO doctors (id, email, password, name, phone, nic, specialty_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, email, password, name, phone, nic, specialty_id, 'doctor' AS role, created_at",
             [
               id,
               data.email.toLowerCase(),
@@ -311,10 +342,10 @@ export const db = {
               data.name,
               data.phone || "",
               data.nic || "",
-              spec
+              specId
             ]
           );
-          return mapUser(res.rows[0]);
+          return await db.doctors.findById(id);
         } else {
           // Patient
           const res = await pgPool.query(
@@ -373,9 +404,9 @@ export const db = {
             fields.push(`nic = $${idx++}`);
             values.push(updates.nic);
           }
-          if (updates.specialty !== undefined || updates.specialtyName !== undefined) {
-            fields.push(`specialty = $${idx++}`);
-            values.push(updates.specialty || updates.specialtyName);
+          if (updates.specialtyId !== undefined) {
+            fields.push(`specialty_id = $${idx++}`);
+            values.push(Number(updates.specialtyId));
           }
         }
         if (role === "patient") {
@@ -396,7 +427,7 @@ export const db = {
         if (fields.length === 0) return existing;
 
         values.push(id);
-        const query = `UPDATE ${targetTable} SET ${fields.join(", ")} WHERE id = $${idx} RETURNING *`;
+        const query = `UPDATE ${targetTable} SET ${fields.join(", ")} WHERE id = $${idx}`;
         await pgPool.query(query, values);
         return await db.users.findById(id);
       }
@@ -423,16 +454,6 @@ export const db = {
       const [removed] = localStore.data.users.splice(idx, 1);
       localStore.save();
       return removed;
-    }
-  },
-
-  // Specialties Catalog (Served from in-memory standard catalog with zero SQL table overhead)
-  specialties: {
-    find: async () => {
-      return [...initialSpecialties].sort((a, b) => a.sname.localeCompare(b.sname));
-    },
-    findById: async (id) => {
-      return initialSpecialties.find(s => s.id === Number(id)) || null;
     }
   },
 
@@ -489,7 +510,7 @@ export const db = {
           id,
           data.docId,
           data.docName || "",
-          data.specialtyName || data.specialty || "",
+          data.specialtyName || "",
           data.title,
           data.sessionDate,
           data.sessionTime,
@@ -791,17 +812,29 @@ export async function initDatabase() {
     const ping = await pgPool.query("SELECT NOW()");
     console.log("✅ Successfully connected to PostgreSQL / Supabase! Server time:", ping.rows[0].now);
 
-    // Apply schema tables (admins, doctors, patients, schedules, appointments)
+    // Apply schema tables (specialties, admins, doctors, patients, schedules, appointments)
     const schemaFile = path.join(__dirname, "schema.sql");
     if (fs.existsSync(schemaFile)) {
       const schemaSql = fs.readFileSync(schemaFile, "utf-8");
       await pgPool.query(schemaSql);
-      console.log("📋 Verified PostgreSQL separate relational tables (admins, doctors [with specialty column], patients, schedules, appointments).");
+      console.log("📋 Verified PostgreSQL separate relational tables (specialties, admins, doctors [with specialty_id], patients, schedules, appointments).");
+    }
+
+    // Seed specialties catalog table if empty
+    const specCount = await pgPool.query("SELECT COUNT(*) FROM specialties");
+    if (Number(specCount.rows[0].count) === 0) {
+      console.log("🌱 Seeding 56 clinical specialties into specialties table...");
+      for (const s of initialSpecialties) {
+        await pgPool.query("INSERT INTO specialties (id, sname) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING", [
+          s.id,
+          s.sname
+        ]);
+      }
     }
 
     db.isPostgres = true;
 
-    // Seed initial data if empty
+    // Seed initial users if empty
     const adminCount = await pgPool.query("SELECT COUNT(*) FROM admins");
     const docCount = await pgPool.query("SELECT COUNT(*) FROM doctors");
     const patCount = await pgPool.query("SELECT COUNT(*) FROM patients");

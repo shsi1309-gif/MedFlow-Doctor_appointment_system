@@ -75,7 +75,7 @@ router.post("/", authenticate, authorize("admin"), async (req, res) => {
       password: hashedPassword,
       nic: nic || "",
       phone: phone || "",
-      specialty: specialtyName,
+      specialtyId: Number(specialtyId),
       specialtyName
     });
 

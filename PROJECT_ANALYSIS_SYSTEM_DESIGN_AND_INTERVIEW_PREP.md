@@ -237,10 +237,16 @@ One of the standout design characteristics of the Medflow server is its **Dual-M
 
 ```mermaid
 erDiagram
+    SPECIALTY ||--o{ DOCTOR : "classifies"
     DOCTOR ||--o{ SCHEDULE : "creates/hosts"
     DOCTOR ||--o{ APPOINTMENT : "attends"
     PATIENT ||--o{ APPOINTMENT : "books"
     SCHEDULE ||--o{ APPOINTMENT : "contains slots"
+
+    SPECIALTY {
+        int id PK
+        string sname "Specialty Name (e.g. Cardiology)"
+    }
 
     ADMIN {
         string id PK
@@ -258,7 +264,7 @@ erDiagram
         string name
         string phone
         string nic
-        string specialty "Embedded directly in doctor table"
+        int specialtyId FK "References specialties(id)"
         date createdAt
     }
 
