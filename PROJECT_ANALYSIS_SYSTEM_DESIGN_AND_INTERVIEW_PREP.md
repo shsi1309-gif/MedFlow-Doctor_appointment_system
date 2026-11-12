@@ -103,21 +103,19 @@ sequenceDiagram
     participant API as Express Router (/api/auth)
     participant DB as Database Adapter (db.js)
 
-    Client->>React: Submit Email & Password
+    Client->>React: Submit Email and Password
     React->>API: POST /api/auth/login { email, password, expectedRole }
     API->>DB: db.users.findOne({ email })
     DB-->>API: User Record (or null)
-    alt User Not Found / Role Mismatch
-        API-->>React: 401 Unauthorized ("Account does not exist / Role mismatch")
-    else Password Verification
+    alt User Not Found or Role Mismatch
+        API-->>React: 401 Unauthorized (Account does not exist or Role mismatch)
+    else Invalid Password
         API->>API: bcrypt.compare(password, user.password)
-        alt Invalid Password
-            API-->>React: 401 Unauthorized ("Incorrect credentials")
-        else Success
-            API->>API: signToken(user) [JWT signed with 7-day TTL]
-            API-->>React: 200 OK { token, user (sanitized) }
-            React->>React: Store token in localStorage; set AuthContext state
-        end
+        API-->>React: 401 Unauthorized (Incorrect credentials)
+    else Successful Authentication
+        API->>API: signToken(user) [JWT signed with 7-day TTL]
+        API-->>React: 200 OK { token, sanitized user }
+        React->>React: Store token in localStorage and update AuthContext
     end
 ```
 
@@ -133,20 +131,20 @@ sequenceDiagram
 
     Patient->>UI: Clicks "Book Appointment" for ScheduleId
     UI->>Route: POST /api/appointments { scheduleId } [Bearer JWT]
-    Route->>Route: Verify Token & Extract req.user.id
+    Route->>Route: Verify Token and Extract user id
     Route->>SchedDB: findById(scheduleId)
     SchedDB-->>Route: schedule object
     Route->>ApptDB: find({ scheduleId, patientId, status: "confirmed" })
     alt Already Booked
-        Route-->>UI: 400 Bad Request ("Already booked this session")
+        Route-->>UI: 400 Bad Request (Already booked this session)
     else Session Full (bookedCount >= maxAppointments)
-        Route-->>UI: 400 Bad Request ("Session is fully booked")
+        Route-->>UI: 400 Bad Request (Session is fully booked)
     else Slot Available
         Route->>Route: apponum = schedule.bookedCount + 1
-        Route->>ApptDB: create({ scheduleId, appointmentNumber: apponum, ... })
-        Route->>SchedDB: findByIdAndUpdate(scheduleId, { bookedCount: apponum })
-        Route-->>UI: 201 Created (Appointment Record + Token #)
-        UI->>Patient: Launch Appointment Slip Modal with Token #
+        Route->>ApptDB: create appointment with appointmentNumber apponum
+        Route->>SchedDB: findByIdAndUpdate(scheduleId, bookedCount: apponum)
+        Route-->>UI: 201 Created (Appointment Record with Token Number)
+        UI->>Patient: Launch Appointment Slip Modal with Token Number
     end
 ```
 
